@@ -8,7 +8,8 @@ from app.database.session import engine
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PHASE_2_REVISION = "phase2_samples"
-HEAD_REVISION = "phase3_training_runs"
+PHASE_3_REVISION = "phase3_training_runs"
+HEAD_REVISION = "phase4_predictions"
 
 
 def _alembic_config() -> Config:
@@ -25,11 +26,12 @@ def init_db(database_engine: Engine = engine) -> None:
         config.attributes["connection"] = connection
 
         if "alembic_version" not in table_names and "samples" in table_names:
-            adopted_revision = (
-                HEAD_REVISION
-                if "training_runs" in table_names
-                else PHASE_2_REVISION
-            )
+            if "predictions" in table_names:
+                adopted_revision = HEAD_REVISION
+            elif "training_runs" in table_names:
+                adopted_revision = PHASE_3_REVISION
+            else:
+                adopted_revision = PHASE_2_REVISION
             command.stamp(config, adopted_revision)
 
         command.upgrade(config, "head")

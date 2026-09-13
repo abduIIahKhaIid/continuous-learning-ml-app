@@ -19,6 +19,8 @@ class TrainingRepository(Protocol):
         self, *, completed_only: bool = False
     ) -> list[str]: ...
 
+    def get_model_for_inference(self) -> TrainingRun | None: ...
+
     def create_training_run(
         self,
         *,
@@ -70,6 +72,28 @@ class SqlAlchemyTrainingRepository:
         if completed_only:
             statement = statement.where(TrainingRun.status == "completed")
         return list(self._session.scalars(statement))
+
+    def get_model_for_inference(self) -> TrainingRun | None:
+        active_statement = (
+            select(TrainingRun)
+            .where(
+                TrainingRun.status == "completed",
+                TrainingRun.is_active.is_(True),
+            )
+            .order_by(TrainingRun.id.desc())
+            .limit(1)
+        )
+        active_run = self._session.scalar(active_statement)
+        if active_run is not None:
+            return active_run
+
+        fallback_statement = (
+            select(TrainingRun)
+            .where(TrainingRun.status == "completed")
+            .order_by(TrainingRun.id.desc())
+            .limit(1)
+        )
+        return self._session.scalar(fallback_statement)
 
     def create_training_run(
         self,

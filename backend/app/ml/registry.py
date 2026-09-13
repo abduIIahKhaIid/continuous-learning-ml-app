@@ -27,6 +27,14 @@ class ArtifactInfo:
     format: str = "joblib"
 
 
+def calculate_artifact_checksum(artifact_path: Path) -> str:
+    checksum_builder = hashlib.sha256()
+    with artifact_path.open("rb") as artifact_file:
+        for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
+            checksum_builder.update(chunk)
+    return checksum_builder.hexdigest()
+
+
 def generate_next_model_version(existing_versions: list[str]) -> str:
     version_numbers = [
         int(match.group(1))
@@ -83,11 +91,7 @@ def save_trained_model(
         artifact_path.unlink(missing_ok=True)
         raise
 
-    checksum_builder = hashlib.sha256()
-    with artifact_path.open("rb") as artifact_file:
-        for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
-            checksum_builder.update(chunk)
-    checksum = checksum_builder.hexdigest()
+    checksum = calculate_artifact_checksum(artifact_path)
     return ArtifactInfo(path=artifact_path, checksum=checksum)
 
 

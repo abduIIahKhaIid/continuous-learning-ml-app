@@ -1,6 +1,6 @@
 # Continuous Learning ML App
 
-A Phase 3 full-stack application with a React + Vite frontend, FastAPI backend, persistent SQLAlchemy storage, and a manually invoked baseline training pipeline. Labelled samples train a versioned scikit-learn pipeline. Prediction, automatic or incremental retraining, background workers, and authentication remain outside this phase.
+A Phase 4 full-stack application with a React + Vite frontend, FastAPI backend, SQLAlchemy persistence, manual scikit-learn training, and registry-backed prediction. Continuous or automatic retraining, training on predictions, background workers, model promotion automation, authentication, and automatic label collection are intentionally not implemented.
 
 ## Prerequisites
 
@@ -10,34 +10,35 @@ A Phase 3 full-stack application with a React + Vite frontend, FastAPI backend, 
 
 ## Configuration
 
-From the repository root, create the local environment file:
+From the repository root:
 
 ```bash
 cp .env.example .env
 ```
 
-The checked-in defaults connect the Vite development server at `http://localhost:5173` to FastAPI at `http://localhost:8000`. The frontend reads the backend URL from `VITE_API_BASE_URL`; application components do not hardcode it.
-
-`DATABASE_URL` is required by the backend. The development value is:
+The important development settings are:
 
 ```dotenv
 DATABASE_URL=sqlite:///./app.db
-```
-
-Because the documented backend command runs from `backend/`, SQLite creates the ignored database file at `backend/app.db`. FastAPI applies pending Alembic migrations during application startup. An existing Phase 2 database is safely stamped at its known baseline before the Phase 3 migration runs.
-
-Initial training is configured through the same root `.env` file:
-
-```dotenv
-MIN_TRAINING_SAMPLES=20
-ML_TEST_SIZE=0.2
-ML_RANDOM_STATE=42
 MODEL_DIR=models
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
-Relative model paths are resolved from the repository root, not the shell's current directory.
+The backend command below runs from `backend/`, so SQLite creates the ignored database at `backend/app.db`. `MODEL_DIR` is resolved from the repository root, placing ignored joblib artifacts in `models/`. FastAPI applies pending Alembic migrations at startup.
 
-## Start the backend
+To apply migrations manually instead, run:
+
+```bash
+source .venv/bin/activate
+cd backend
+python -m alembic upgrade head
+```
+
+To use PostgreSQL later, install the relevant SQLAlchemy driver and replace `DATABASE_URL` with a PostgreSQL URL. Repository and service logic do not depend on SQLite-specific queries.
+
+The frontend accesses FastAPI only through its shared API client and `VITE_API_BASE_URL`. Codespaces setup may replace local frontend/backend URLs automatically; FastAPI accepts the configured local origin and Codespaces port `5173` origin pattern.
+
+## Install and run the backend
 
 From the repository root:
 
@@ -50,15 +51,9 @@ cd backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The backend exposes:
+API documentation is available at `http://localhost:8000/docs`.
 
-- `GET http://localhost:8000/health`
-- `POST http://localhost:8000/api/data`
-- `GET http://localhost:8000/api/data?skip=0&limit=20`
-- `GET http://localhost:8000/api/data/{id}`
-- API documentation at `http://localhost:8000/docs`
-
-## Start the frontend
+## Install and run the frontend
 
 In a second terminal, from the repository root:
 
@@ -68,92 +63,64 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173`, or the forwarded port `5173` URL in Codespaces.
 
-### GitHub Codespaces
+## Train the first model
 
-The dev container automatically forwards ports 5173 and 8000 whenever you attach. It also runs `.devcontainer/setup-codespaces.sh`, which:
-
-- builds the frontend and backend URLs from the Codespaces-provided environment variables;
-- writes them to the ignored `.env` file; and
-- makes backend port 8000 public through GitHub CLI.
-
-After rebuilding the dev container once, start the frontend with:
+First submit at least `MIN_TRAINING_SAMPLES` labelled records through the frontend or `POST /api/data`. Both binary labels (`0` and `1`) must be present. Then run training manually from the repository root:
 
 ```bash
-cd frontend
-npm run dev -- --host 0.0.0.0
-```
-
-No manual URL replacement or port-visibility change is normally needed. An organization-level Codespaces policy can still prohibit public ports; in that case the setup script prints a warning.
-
-## Run checks
-
-Run the backend tests from the repository root after activating the virtual environment:
-
-```bash
-cd backend
-python -m pytest
-```
-
-Build the frontend from the repository root:
-
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-## Phase 2 data API
-
-`POST /api/data` accepts JSON in this shape:
-
-```json
-{
-  "feature_1": 1.25,
-  "feature_2": 2.5,
-  "feature_3": -3.75,
-  "label": 1
-}
-```
-
-`feature_1`, `feature_2`, and `feature_3` are required numeric values. `label` is optional and, when supplied, must be `0` or `1`. The POST endpoint returns the persisted record, including its ID, UTC timestamps, and training metadata. Listing is ordered by ID and accepts `skip >= 0` plus `limit` from 1 through 100.
-
-## Run initial model training
-
-Add at least the configured number of labelled samples through `POST /api/data` or the frontend form, then run:
-
-```bash
+source .venv/bin/activate
 cd backend
 python -m app.ml.train
 ```
 
-The command loads labelled rows, validates binary labels, performs a reproducible train/test split, fits a single scikit-learn `Pipeline` containing median imputation, standard scaling, and logistic regression, evaluates the held-out set, and writes a concise summary.
+Training saves the complete preprocessing-and-classifier `Pipeline` as a versioned joblib artifact and stores its path, SHA-256 checksum, metrics, status, and `model_version` in `training_runs`.
 
-To apply database migrations manually without starting FastAPI or training:
+Phase 4 adds an `is_active` registry flag but does not automate promotion. Inference chooses the newest completed active row. If no completed row is active, it safely falls back to the latest completed training run. The loader validates registry metadata, constrains artifacts to `MODEL_DIR`, verifies the file and checksum, and caches the loaded Pipeline. Each request still checks the registry, so a different selected version is lazily loaded when the registry changes.
+
+## Prediction API
+
+Create and persist a prediction:
 
 ```bash
-cd backend
-python -m alembic upgrade head
+curl -X POST http://localhost:8000/api/predict \
+  -H 'Content-Type: application/json' \
+  -d '{"feature_1":2.5,"feature_2":4.1,"feature_3":6.7}'
 ```
 
-Successful artifacts are stored as immutable files under the root `models/` directory:
+The response contains `prediction_id`, `prediction`, `predicted_class`, class-1 `probability` when supported, `model_version`, and `created_at`. `model_version` identifies the exact registered artifact used for inference.
 
-```text
-models/model_v1.joblib
-models/model_v2.joblib
+Other endpoints:
+
+- `GET /health`
+- `POST /api/data`
+- `GET /api/data?skip=0&limit=20`
+- `GET /api/data/{id}`
+- `GET /api/predictions?skip=0&limit=20`
+- `GET /api/predictions/{prediction_id}`
+- `GET /api/model/status`
+
+`GET /api/model/status` reports model availability, selected version, algorithm, creation time, and evaluation metrics without exposing its filesystem path.
+
+Prediction history is stored separately in the `predictions` table. Each row records its input features, prediction, optional probability, and exact model version. `actual_label` starts as `NULL` because a prediction is not ground truth; labels and feedback are not collected automatically in this phase.
+
+If no completed model exists, prediction returns HTTP `503` with `No trained model available.` Missing, unreadable, checksum-mismatched, or corrupt artifacts also return a sanitized `503` response and are logged by the backend.
+
+## Tests and builds
+
+Run the full backend suite from the repository root:
+
+```bash
+source .venv/bin/activate
+python -m pytest backend
 ```
 
-Model binaries are ignored by Git. Every attempt reserves a unique model version and training batch. Completed runs store metrics, confusion matrix, parameters, artifact checksum, exact sample IDs, and status in `training_runs`. Sample training metadata is updated in the same final transaction. Failed runs retain their error details and do not modify sample training flags.
+Run the frontend production build:
 
-## PostgreSQL readiness and migrations
-
-Persistence is isolated behind a repository interface, so services and API routes do not change when the database changes. A later PostgreSQL configuration can use a SQLAlchemy URL such as:
-
-```dotenv
-DATABASE_URL=postgresql+psycopg://user:password@localhost/app
+```bash
+cd frontend
+npm run build
 ```
 
-Install the appropriate PostgreSQL driver when making that switch. Alembic now owns schema evolution: `phase2_samples` records the original table and `phase3_training_runs` adds the training registry. Startup runs upgrades automatically, while the manual command above remains available for controlled environments.
-
-Tests create fresh SQLite files and model directories under pytest's temporary directory. They never use `backend/app.db` or the real `models/` artifact directory.
+Backend tests use a temporary SQLite database and temporary model directory. They never modify `backend/app.db` or the real `models/` artifacts.

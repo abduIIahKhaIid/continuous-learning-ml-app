@@ -14,9 +14,26 @@ def test_migrations_create_fresh_schema(tmp_path: Path) -> None:
 
         assert set(inspect(engine).get_table_names()) == {
             "alembic_version",
+            "predictions",
             "samples",
             "training_runs",
         }
+        assert "is_active" in {
+            column["name"]
+            for column in inspect(engine).get_columns("training_runs")
+        }
+        assert {
+            "predicted_class",
+            "prediction_probability",
+            "model_version",
+            "actual_label",
+            "feedback_received",
+        }.issubset(
+            {
+                column["name"]
+                for column in inspect(engine).get_columns("predictions")
+            }
+        )
         with engine.connect() as connection:
             revision = connection.scalar(
                 text("SELECT version_num FROM alembic_version")
@@ -33,6 +50,8 @@ def test_migrations_adopt_existing_phase_two_database(tmp_path: Path) -> None:
 
         init_db(engine)
 
-        assert "training_runs" in inspect(engine).get_table_names()
+        assert {"training_runs", "predictions"}.issubset(
+            inspect(engine).get_table_names()
+        )
     finally:
         engine.dispose()
