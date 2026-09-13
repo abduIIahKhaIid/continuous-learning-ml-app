@@ -9,6 +9,7 @@ from app.ml.config import ContinuousTrainingConfig, TrainingConfig
 from app.ml.dataset import build_training_dataset
 from app.ml.evaluator import EvaluationMetrics, evaluate_model
 from app.ml.model_loader import ModelLoader
+from app.monitoring.profiles import build_reference_profiles
 from app.ml.promotion import decide_promotion, metrics_to_dict
 from app.ml.registry import ArtifactInfo, save_trained_model
 from app.ml.trainer import create_reproducible_split, train_candidate_on_split
@@ -104,6 +105,7 @@ class RetrainingService:
                 )
 
             candidate = train_candidate_on_split(split, training_config)
+            reference_profiles = build_reference_profiles(split.x_train)
             decision = decide_promotion(
                 candidate=candidate.metrics,
                 active=active_metrics,
@@ -162,6 +164,7 @@ class RetrainingService:
                     rejection_reason=(
                         None if decision.promote else decision.reason
                     ),
+                    reference_profiles=reference_profiles,
                 )
             finalized = True
             if decision.promote:

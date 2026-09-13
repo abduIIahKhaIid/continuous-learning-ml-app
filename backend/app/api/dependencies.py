@@ -14,9 +14,13 @@ from app.ml.continuous_training import (
 )
 from app.ml.model_loader import ModelLoader, model_loader
 from app.repositories.data import SqlAlchemyDataRepository
+from app.repositories.models import SqlAlchemyModelRepository
+from app.repositories.monitoring import SqlAlchemyMonitoringRepository
 from app.repositories.prediction import SqlAlchemyPredictionRepository
 from app.repositories.training import SqlAlchemyTrainingRepository
 from app.services.feedback import FeedbackService
+from app.services.models import ModelService
+from app.services.monitoring import MonitoringService
 
 
 async def get_data_repository(
@@ -78,6 +82,32 @@ async def get_training_job_runner() -> Callable[[int], None]:
     return run_reserved_training
 
 
+async def get_monitoring_service(
+    session: Annotated[Session, Depends(get_db)],
+    loader: Annotated[ModelLoader, Depends(get_model_loader)],
+) -> MonitoringService:
+    settings = get_settings()
+    return MonitoringService(
+        monitoring_repository=SqlAlchemyMonitoringRepository(session),
+        training_repository=SqlAlchemyTrainingRepository(session),
+        loader=loader,
+        settings=settings,
+        model_dir=settings.resolved_model_dir,
+    )
+
+
+async def get_model_service(
+    session: Annotated[Session, Depends(get_db)],
+    loader: Annotated[ModelLoader, Depends(get_model_loader)],
+) -> ModelService:
+    settings = get_settings()
+    return ModelService(
+        repository=SqlAlchemyModelRepository(session),
+        loader=loader,
+        model_dir=settings.resolved_model_dir,
+    )
+
+
 PredictionRepositoryDependency = Annotated[
     SqlAlchemyPredictionRepository,
     Depends(get_prediction_repository),
@@ -103,3 +133,7 @@ TrainingJobRunnerDependency = Annotated[
     Callable[[int], None],
     Depends(get_training_job_runner),
 ]
+MonitoringServiceDependency = Annotated[
+    MonitoringService, Depends(get_monitoring_service)
+]
+ModelServiceDependency = Annotated[ModelService, Depends(get_model_service)]

@@ -6,7 +6,14 @@ from sqlalchemy.engine import Connection
 
 from app.core.config import get_settings
 from app.database.base import Base
-from app.models import Prediction, Sample, TrainingRun  # noqa: F401
+from app.models import (  # noqa: F401
+    ModelDataProfile,
+    ModelEvent,
+    MonitoringSnapshot,
+    Prediction,
+    Sample,
+    TrainingRun,
+)
 
 config = context.config
 if config.config_file_name is not None:

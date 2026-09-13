@@ -8,6 +8,7 @@ from app.ml.dataset import build_training_dataset
 from app.ml.evaluator import EvaluationMetrics
 from app.ml.registry import ArtifactInfo, reserve_training_run, save_trained_model
 from app.ml.trainer import train_baseline_model
+from app.monitoring.profiles import build_reference_profiles
 from app.repositories.training import SqlAlchemyTrainingRepository
 
 ALGORITHM = "LogisticRegression"
@@ -44,6 +45,15 @@ def run_initial_training(
             minimum_samples=config.minimum_samples,
         )
         result = train_baseline_model(dataset, config)
+        train_id_set = set(result.train_sample_ids)
+        training_features = dataset.features[
+            [
+                index
+                for index, sample_id in enumerate(dataset.sample_ids)
+                if sample_id in train_id_set
+            ]
+        ]
+        reference_profiles = build_reference_profiles(training_features)
         artifact = save_trained_model(
             result.pipeline,
             model_version=run.model_version,
@@ -73,6 +83,7 @@ def run_initial_training(
             f1_score=result.metrics.f1_score,
             roc_auc=result.metrics.roc_auc,
             confusion_matrix=result.metrics.confusion_matrix,
+            reference_profiles=reference_profiles,
         )
     except Exception as error:
         if artifact is not None:

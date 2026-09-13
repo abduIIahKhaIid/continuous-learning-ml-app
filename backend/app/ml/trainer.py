@@ -28,6 +28,7 @@ class TrainingResult:
     train_sample_count: int
     test_sample_count: int
     evaluation_sample_ids: list[int]
+    train_sample_ids: list[int]
 
 
 def _ensure_both_classes_in_training_set(
@@ -127,6 +128,7 @@ def train_candidate_on_split(
         train_sample_count=len(split.y_train),
         test_sample_count=len(split.y_evaluation),
         evaluation_sample_ids=split.evaluation_sample_ids,
+        train_sample_ids=split.train_sample_ids,
     )
 
 

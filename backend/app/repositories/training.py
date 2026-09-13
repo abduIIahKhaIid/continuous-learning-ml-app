@@ -5,6 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.sample import Sample, utc_now
+from app.models.model_data_profile import ModelDataProfile
+from app.models.model_event import ModelEvent
 from app.models.training_run import TrainingRun
 
 SERVABLE_STATUSES = ("completed", "promoted")
@@ -256,6 +258,7 @@ class SqlAlchemyTrainingRepository:
         f1_score: float,
         roc_auc: float | None,
         confusion_matrix: list[list[int]],
+        reference_profiles: list[dict[str, Any]],
     ) -> TrainingRun:
         run = self._session.get(TrainingRun, run_id)
         if run is None:
@@ -284,8 +287,27 @@ class SqlAlchemyTrainingRepository:
             run.roc_auc = roc_auc
             run.confusion_matrix = confusion_matrix
             run.status = "completed"
+            if self.get_active_model() is None:
+                run.is_active = True
+                run.promoted_at = utc_now()
             run.error_message = None
             run.completed_at = utc_now()
+            self._add_profiles(run.model_version, reference_profiles)
+            self._session.add(
+                ModelEvent(
+                    event_type="trained",
+                    model_version=run.model_version,
+                    reason="Manual baseline training completed.",
+                )
+            )
+            if run.is_active:
+                self._session.add(
+                    ModelEvent(
+                        event_type="promoted",
+                        model_version=run.model_version,
+                        reason="First available model activated.",
+                    )
+                )
             self._session.commit()
         except Exception:
             self._session.rollback()
@@ -309,6 +331,7 @@ class SqlAlchemyTrainingRepository:
         active_metrics: dict[str, Any] | None,
         promoted: bool,
         rejection_reason: str | None,
+        reference_profiles: list[dict[str, Any]],
     ) -> TrainingRun:
         run = self._session.get(TrainingRun, run_id)
         if run is None:
@@ -360,6 +383,27 @@ class SqlAlchemyTrainingRepository:
             run.error_message = None
             run.completed_at = now
             run.concurrency_slot = None
+            self._add_profiles(run.model_version, reference_profiles)
+            self._session.add(
+                ModelEvent(
+                    event_type="trained",
+                    model_version=run.model_version,
+                    previous_model_version=run.active_model_version_before,
+                    reason="Automatic candidate training completed.",
+                )
+            )
+            self._session.add(
+                ModelEvent(
+                    event_type="promoted" if promoted else "rejected",
+                    model_version=run.model_version,
+                    previous_model_version=run.active_model_version_before,
+                    reason=(
+                        "Candidate passed the configured promotion gate."
+                        if promoted
+                        else (rejection_reason or "Promotion gate rejected candidate.")[:500]
+                    ),
+                )
+            )
             self._session.commit()
         except Exception:
             self._session.rollback()
@@ -378,3 +422,13 @@ class SqlAlchemyTrainingRepository:
         run.completed_at = utc_now()
         run.concurrency_slot = None
         self._session.commit()
+
+    def _add_profiles(
+        self, model_version: str, profiles: list[dict[str, Any]]
+    ) -> None:
+        self._session.add_all(
+            [
+                ModelDataProfile(model_version=model_version, **profile)
+                for profile in profiles
+            ]
+        )

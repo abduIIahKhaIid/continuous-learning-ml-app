@@ -15,6 +15,9 @@ def test_migrations_create_fresh_schema(tmp_path: Path) -> None:
 
         assert set(inspect(engine).get_table_names()) == {
             "alembic_version",
+            "model_data_profiles",
+            "model_events",
+            "monitoring_snapshots",
             "predictions",
             "samples",
             "training_runs",
@@ -66,6 +69,12 @@ def test_migrations_create_fresh_schema(tmp_path: Path) -> None:
             "promoted_at",
             "completed_at",
         }.issubset(training_run_columns)
+        assert any(
+            constraint["column_names"] == ["model_version", "feature_name"]
+            for constraint in inspect(engine).get_unique_constraints(
+                "model_data_profiles"
+            )
+        )
         with engine.connect() as connection:
             revision = connection.scalar(
                 text("SELECT version_num FROM alembic_version")

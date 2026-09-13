@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import RLock
 
 import joblib
+import numpy as np
 from sklearn.pipeline import Pipeline
 
 from app.ml.registry import calculate_artifact_checksum
@@ -184,6 +185,33 @@ class ModelLoader:
             if cache:
                 self._cached_model = loaded
             return loaded
+
+    def validate_registered_run(
+        self,
+        run: TrainingRun,
+        *,
+        model_dir: Path,
+        expected_feature_count: int = 3,
+    ) -> LoadedModel:
+        """Validate registry metadata, artifact integrity, and input contract."""
+        loaded = self.load_registered_run(
+            run, model_dir=model_dir, cache=False
+        )
+        try:
+            feature_count = int(loaded.pipeline.n_features_in_)
+            prediction = loaded.pipeline.predict(
+                np.zeros((1, expected_feature_count), dtype=np.float64)
+            )
+            prediction_class = int(prediction[0])
+        except Exception as error:
+            raise ModelLoadError(run.model_version) from error
+        if (
+            feature_count != expected_feature_count
+            or len(prediction) != 1
+            or prediction_class not in (0, 1)
+        ):
+            raise ModelLoadError(run.model_version)
+        return loaded
 
 
 model_loader = ModelLoader()

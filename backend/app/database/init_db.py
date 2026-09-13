@@ -11,7 +11,8 @@ PHASE_2_REVISION = "phase2_samples"
 PHASE_3_REVISION = "phase3_training_runs"
 PHASE_4_REVISION = "phase4_predictions"
 PHASE_5_REVISION = "phase5_feedback_lineage"
-HEAD_REVISION = "phase6_continuous_training"
+PHASE_6_REVISION = "phase6_continuous_training"
+HEAD_REVISION = "phase7_monitoring"
 
 
 def _alembic_config() -> Config:
@@ -32,11 +33,18 @@ def init_db(database_engine: Engine = engine) -> None:
                     column["name"]
                     for column in inspect(connection).get_columns("samples")
                 }
-                adopted_revision = (
-                    PHASE_5_REVISION
-                    if "source_prediction_id" in sample_columns
-                    else PHASE_4_REVISION
-                )
+                training_columns = {
+                    column["name"]
+                    for column in inspect(connection).get_columns(
+                        "training_runs"
+                    )
+                }
+                if "concurrency_slot" in training_columns:
+                    adopted_revision = PHASE_6_REVISION
+                elif "source_prediction_id" in sample_columns:
+                    adopted_revision = PHASE_5_REVISION
+                else:
+                    adopted_revision = PHASE_4_REVISION
             elif "training_runs" in table_names:
                 adopted_revision = PHASE_3_REVISION
             else:
