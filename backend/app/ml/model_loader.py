@@ -8,6 +8,7 @@ import joblib
 from sklearn.pipeline import Pipeline
 
 from app.ml.registry import calculate_artifact_checksum
+from app.models.training_run import TrainingRun
 from app.repositories.training import TrainingRepository
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,9 @@ class ModelLoader:
         with self._lock:
             self._cached_model = None
 
+    def invalidate_cache(self) -> None:
+        self.clear_cache()
+
     def load(
         self,
         repository: TrainingRepository,
@@ -75,6 +79,15 @@ class ModelLoader:
         run = repository.get_model_for_inference()
         if run is None:
             raise NoModelAvailableError("No completed model is available.")
+        return self.load_registered_run(run, model_dir=model_dir, cache=True)
+
+    def load_registered_run(
+        self,
+        run: TrainingRun,
+        *,
+        model_dir: Path,
+        cache: bool = False,
+    ) -> LoadedModel:
         if (
             not run.model_path
             or not run.artifact_checksum
@@ -99,7 +112,8 @@ class ModelLoader:
         with self._lock:
             cached = self._cached_model
             if (
-                cached is not None
+                cache
+                and cached is not None
                 and cached.descriptor.model_version
                 == descriptor.model_version
                 and cached.descriptor.artifact_checksum
@@ -167,7 +181,8 @@ class ModelLoader:
                 raise ModelLoadError(descriptor.model_version)
 
             loaded = LoadedModel(pipeline=pipeline, descriptor=descriptor)
-            self._cached_model = loaded
+            if cache:
+                self._cached_model = loaded
             return loaded
 
 

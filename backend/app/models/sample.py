@@ -1,6 +1,14 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, false
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -42,4 +50,16 @@ class Sample(Base):
     model_version: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
+    )
+    source_prediction_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("predictions.id", ondelete="RESTRICT"),
+        nullable=True,
+        unique=True,
+    )
+    last_triggered_training_run_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("training_runs.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )

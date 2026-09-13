@@ -19,7 +19,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -190,4 +191,155 @@ h1 {
 .prediction-result dd {
   margin: 0.25rem 0 0;
   font-weight: 800;
+}
+
+.history-card {
+  margin-top: 1.5rem;
+}
+
+.training-status-card {
+  margin-top: 1.5rem;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.secondary-button {
+  padding: 0.65rem 0.9rem;
+  border: 1px solid #287a50;
+  border-radius: 0.55rem;
+  color: #216c46;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.training-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.training-status-grid div {
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  background: #eff5f1;
+}
+
+.training-status-grid dt {
+  color: #526159;
+  font-size: 0.8rem;
+}
+
+.training-status-grid dd {
+  margin: 0.25rem 0 0;
+  font-weight: 800;
+}
+
+.feedback-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+}
+
+.feedback-summary span {
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  color: #355044;
+  background: #eff5f1;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.prediction-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.prediction-row {
+  padding: 1rem;
+  border: 1px solid #d7e2dc;
+  border-radius: 0.75rem;
+  background: #fbfdfc;
+}
+
+.prediction-row p {
+  margin-bottom: 0.75rem;
+}
+
+.prediction-row-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.prediction-row-heading span {
+  color: #607068;
+  font-size: 0.85rem;
+}
+
+.feedback-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(8rem, 12rem) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.feedback-form label {
+  font-weight: 700;
+}
+
+.feedback-form select,
+.feedback-form button {
+  min-height: 2.65rem;
+  border-radius: 0.55rem;
+}
+
+.feedback-form select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #aebdb4;
+  color: inherit;
+  background: #ffffff;
+}
+
+.feedback-form button {
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  color: #ffffff;
+  background: #216c46;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.feedback-form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.verified-result {
+  color: #155c38;
+}
+
+.row-error {
+  margin: 0.65rem 0 0;
+  color: #a52a2a;
+}
+
+@media (max-width: 44rem) {
+  .feedback-form {
+    grid-template-columns: 1fr;
+  }
 }

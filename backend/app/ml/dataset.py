@@ -17,6 +17,10 @@ class InvalidLabelError(TrainingDataError):
     pass
 
 
+class InvalidFeatureError(TrainingDataError):
+    pass
+
+
 class InsufficientTrainingDataError(TrainingDataError):
     pass
 
@@ -73,6 +77,10 @@ def build_training_dataset(
         ],
         dtype=np.float64,
     )
+    if not np.isfinite(features).all():
+        raise InvalidFeatureError(
+            "Training features must be present and finite."
+        )
     return TrainingDataset(
         features=features,
         labels=labels,

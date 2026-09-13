@@ -25,6 +25,8 @@ class DataRead(BaseModel):
     used_for_training: bool
     training_batch_id: str | None
     model_version: str | None
+    source_prediction_id: int | None
+    last_triggered_training_run_id: int | None
 
     @field_validator("created_at", "updated_at", mode="after")
     @classmethod
@@ -32,3 +34,7 @@ class DataRead(BaseModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+
+class TrainingDataRead(DataRead):
+    """Read-only representation of data eligible for manual training."""

@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,19 +80,18 @@ def save_trained_model(
 ) -> ArtifactInfo:
     model_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = model_dir / f"{model_version}.joblib"
-    try:
-        artifact_file = artifact_path.open("xb")
-    except FileExistsError:
-        raise
+    temporary_path = model_dir / f".{model_version}.{uuid4().hex}.tmp"
 
     try:
-        with artifact_file:
+        with temporary_path.open("xb") as artifact_file:
             joblib.dump(pipeline, artifact_file)
+        checksum = calculate_artifact_checksum(temporary_path)
+        os.link(temporary_path, artifact_path)
     except Exception:
-        artifact_path.unlink(missing_ok=True)
+        temporary_path.unlink(missing_ok=True)
         raise
+    temporary_path.unlink(missing_ok=True)
 
-    checksum = calculate_artifact_checksum(artifact_path)
     return ArtifactInfo(path=artifact_path, checksum=checksum)
 
 

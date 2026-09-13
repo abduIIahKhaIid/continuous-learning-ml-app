@@ -3,7 +3,13 @@ import { FormEvent, useState } from 'react'
 import { submitPrediction } from '../../lib/api/predictions'
 import type { PredictionResponse } from '../../types/prediction'
 
-export function PredictionForm() {
+interface PredictionFormProps {
+  onPredictionCreated?: () => void
+}
+
+export function PredictionForm({
+  onPredictionCreated,
+}: PredictionFormProps) {
   const [feature1, setFeature1] = useState('')
   const [feature2, setFeature2] = useState('')
   const [feature3, setFeature3] = useState('')
@@ -30,6 +36,7 @@ export function PredictionForm() {
         feature_3: features[2],
       })
       setResult(prediction)
+      onPredictionCreated?.()
     } catch (submissionError) {
       setError(
         submissionError instanceof Error

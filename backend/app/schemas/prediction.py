@@ -53,6 +53,41 @@ class PredictionHistoryItem(BaseModel):
         return value.astimezone(UTC)
 
 
+class PredictionFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actual_label: int = Field(strict=True, ge=0, le=1)
+
+
+class PredictionFeedbackStatus(BaseModel):
+    prediction_id: int
+    predicted_class: int
+    actual_label: int | None
+    feedback_received: bool
+    was_correct: bool | None
+    model_version: str
+
+
+class PredictionFeedbackResponse(PredictionFeedbackStatus):
+    updated_at: datetime
+
+    @field_validator("updated_at", mode="after")
+    @classmethod
+    def ensure_updated_at_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+
+class PredictionFeedbackSummary(BaseModel):
+    total_predictions: int
+    feedback_received: int
+    feedback_pending: int
+    correct_predictions: int
+    incorrect_predictions: int
+    verified_accuracy: float | None
+
+
 class ModelMetrics(BaseModel):
     accuracy: float | None
     f1_score: float | None

@@ -21,7 +21,8 @@ class TrainingRun(Base):
     __tablename__ = "training_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('training', 'completed', 'failed')",
+            "status IN ('queued', 'running', 'training', 'completed', "
+            "'failed', 'rejected', 'promoted')",
             name="ck_training_runs_status",
         ),
     )
@@ -42,6 +43,16 @@ class TrainingRun(Base):
     training_sample_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
+    trigger_type: Mapped[str | None] = mapped_column(String(32))
+    trigger_new_sample_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    trigger_sample_ids: Mapped[list[int] | None] = mapped_column(JSON)
+    evaluation_sample_ids: Mapped[list[int] | None] = mapped_column(JSON)
+    active_model_version_before: Mapped[str | None] = mapped_column(String(64))
+    active_comparison_metrics: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON
+    )
     train_sample_count: Mapped[int | None] = mapped_column(Integer)
     test_sample_count: Mapped[int | None] = mapped_column(Integer)
     accuracy: Mapped[float | None] = mapped_column(Float)
@@ -58,6 +69,16 @@ class TrainingRun(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
     error_message: Mapped[str | None] = mapped_column(String(2000))
+    rejection_reason: Mapped[str | None] = mapped_column(String(2000))
+    concurrency_slot: Mapped[str | None] = mapped_column(
+        String(32), unique=True
+    )
+    promoted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

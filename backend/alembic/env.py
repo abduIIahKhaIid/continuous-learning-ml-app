@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import Connection
 
 from app.core.config import get_settings
 from app.database.base import Base
@@ -33,13 +34,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     provided_connection = config.attributes.get("connection")
     if provided_connection is not None:
-        context.configure(
-            connection=provided_connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+        _run_with_connection(provided_connection)
         return
 
     connectable = engine_from_config(
@@ -48,6 +43,17 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        _run_with_connection(connection)
+
+
+def _run_with_connection(connection: Connection) -> None:
+    is_sqlite = connection.dialect.name == "sqlite"
+    if is_sqlite:
+        if connection.in_transaction():
+            connection.rollback()
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+    try:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -55,6 +61,12 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+    finally:
+        if is_sqlite:
+            if connection.in_transaction():
+                connection.commit()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
 
 
 if context.is_offline_mode():

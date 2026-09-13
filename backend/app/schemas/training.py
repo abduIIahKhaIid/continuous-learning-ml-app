@@ -1,0 +1,90 @@
+from datetime import UTC, datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+TrainingStatusValue = Literal[
+    "queued",
+    "running",
+    "training",
+    "completed",
+    "failed",
+    "rejected",
+    "promoted",
+]
+
+
+class TrainingCheckResponse(BaseModel):
+    eligible: bool
+    new_samples: int
+    threshold: int
+    training_scheduled: bool
+    training_run_id: int | None = None
+    reason: str | None = None
+
+
+class TrainingRunSummary(BaseModel):
+    model_version: str
+    status: TrainingStatusValue
+    created_at: datetime
+
+    @field_validator("created_at", mode="after")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+
+class TrainingStatusResponse(BaseModel):
+    auto_retrain_enabled: bool
+    new_verified_samples: int
+    retrain_threshold: int
+    minimum_training_samples: int
+    training_in_progress: bool
+    active_model_version: str | None
+    last_training_run: TrainingRunSummary | None
+
+
+class TrainingRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    model_version: str
+    training_batch_id: str
+    trigger_type: str | None
+    trigger_new_sample_count: int
+    trigger_sample_ids: list[int] | None
+    training_sample_count: int
+    train_sample_count: int | None
+    test_sample_count: int | None
+    evaluation_sample_ids: list[int] | None
+    algorithm: str
+    accuracy: float | None
+    precision: float | None
+    recall: float | None
+    f1_score: float | None
+    roc_auc: float | None
+    confusion_matrix: list[list[int]] | None
+    active_model_version_before: str | None
+    active_comparison_metrics: dict[str, object] | None
+    status: TrainingStatusValue
+    is_active: bool
+    promoted_at: datetime | None
+    rejection_reason: str | None
+    failure_reason: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+    @field_validator(
+        "created_at", "promoted_at", "completed_at", mode="after"
+    )
+    @classmethod
+    def ensure_optional_utc(
+        cls, value: datetime | None
+    ) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)

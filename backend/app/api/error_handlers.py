@@ -8,6 +8,7 @@ from app.ml.model_loader import (
     NoModelAvailableError,
 )
 from app.services.prediction import PredictionDatabaseError
+from app.services.feedback import FeedbackDatabaseError
 
 
 def register_exception_handlers(application: FastAPI) -> None:
@@ -41,8 +42,9 @@ def register_exception_handlers(application: FastAPI) -> None:
         )
 
     @application.exception_handler(PredictionDatabaseError)
+    @application.exception_handler(FeedbackDatabaseError)
     async def prediction_database_handler(
-        _: Request, __: PredictionDatabaseError
+        _: Request, __: PredictionDatabaseError | FeedbackDatabaseError
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

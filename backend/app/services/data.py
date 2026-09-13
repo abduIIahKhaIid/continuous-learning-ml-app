@@ -1,5 +1,5 @@
 from app.repositories.data import DataRepository
-from app.schemas.data import DataCreate, DataRead
+from app.schemas.data import DataCreate, DataRead, TrainingDataRead
 
 
 class DataNotFoundError(Exception):
@@ -22,6 +22,23 @@ def list_data(
 ) -> list[DataRead]:
     samples = repository.list(skip=skip, limit=limit)
     return [DataRead.model_validate(sample) for sample in samples]
+
+
+def list_training_data(
+    *,
+    skip: int,
+    limit: int,
+    labelled_only: bool,
+    unused_only: bool,
+    repository: DataRepository,
+) -> list[TrainingDataRead]:
+    samples = repository.list(
+        skip=skip,
+        limit=limit,
+        labelled_only=labelled_only,
+        unused_only=unused_only,
+    )
+    return [TrainingDataRead.model_validate(sample) for sample in samples]
 
 
 def get_data(
