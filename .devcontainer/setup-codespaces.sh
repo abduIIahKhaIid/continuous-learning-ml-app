@@ -38,10 +38,21 @@ upsert_env_value() {
   fi
 }
 
+ensure_env_value() {
+  local key="$1"
+  local value="$2"
+
+  if ! grep -q "^${key}=" "${env_file}"; then
+    printf '%s=%s\n' "${key}" "${value}" >> "${env_file}"
+  fi
+}
+
 sed -i '/^VITE_API_URL=/d' "${env_file}"
-if ! grep -q '^DATABASE_URL=' "${env_file}"; then
-  printf '%s=%s\n' "DATABASE_URL" "sqlite:///./app.db" >> "${env_file}"
-fi
+ensure_env_value "DATABASE_URL" "sqlite:///./app.db"
+ensure_env_value "MIN_TRAINING_SAMPLES" "20"
+ensure_env_value "ML_TEST_SIZE" "0.2"
+ensure_env_value "ML_RANDOM_STATE" "42"
+ensure_env_value "MODEL_DIR" "models"
 upsert_env_value "FRONTEND_ORIGIN" "${frontend_url}"
 upsert_env_value "VITE_API_BASE_URL" "${backend_url}"
 

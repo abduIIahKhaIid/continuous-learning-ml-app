@@ -53,7 +53,7 @@ def sample_payload(index: int = 1) -> dict[str, int | float]:
         "feature_1": index + 0.1,
         "feature_2": index + 0.2,
         "feature_3": index + 0.3,
-        "label": index,
+        "label": index % 2,
     }
 
 

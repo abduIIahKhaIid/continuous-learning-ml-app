@@ -21,6 +21,8 @@ venv/
 *.sqlite3
 
 # Future local model artifacts and uploaded data
+models/*
+!models/.gitkeep
 artifacts/
 data/uploads/
 

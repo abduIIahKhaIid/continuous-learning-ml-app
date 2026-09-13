@@ -82,6 +82,8 @@ export function DataSubmissionForm() {
           name="label"
           type="number"
           step="1"
+          min="0"
+          max="1"
           value={label}
           onChange={(event) => setLabel(event.target.value)}
           placeholder="1"

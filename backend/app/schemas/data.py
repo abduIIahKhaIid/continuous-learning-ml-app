@@ -9,7 +9,7 @@ class DataCreate(BaseModel):
     feature_1: float = Field(allow_inf_nan=False)
     feature_2: float = Field(allow_inf_nan=False)
     feature_3: float = Field(allow_inf_nan=False)
-    label: int | None = None
+    label: int | None = Field(default=None, ge=0, le=1)
 
 
 class DataRead(BaseModel):

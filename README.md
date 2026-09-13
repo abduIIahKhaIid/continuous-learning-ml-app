@@ -1,6 +1,6 @@
 # Continuous Learning ML App
 
-A Phase 2 full-stack application with a React + Vite frontend, FastAPI backend, and persistent SQLAlchemy storage. Incoming samples are validated, saved, and returned to the browser. Machine learning, background training, prediction, and authentication remain outside this phase.
+A Phase 3 full-stack application with a React + Vite frontend, FastAPI backend, persistent SQLAlchemy storage, and a manually invoked baseline training pipeline. Labelled samples train a versioned scikit-learn pipeline. Prediction, automatic or incremental retraining, background workers, and authentication remain outside this phase.
 
 ## Prerequisites
 
@@ -24,7 +24,18 @@ The checked-in defaults connect the Vite development server at `http://localhost
 DATABASE_URL=sqlite:///./app.db
 ```
 
-Because the documented backend command runs from `backend/`, SQLite creates the ignored database file at `backend/app.db`. FastAPI creates the current development tables during application startup.
+Because the documented backend command runs from `backend/`, SQLite creates the ignored database file at `backend/app.db`. FastAPI applies pending Alembic migrations during application startup. An existing Phase 2 database is safely stamped at its known baseline before the Phase 3 migration runs.
+
+Initial training is configured through the same root `.env` file:
+
+```dotenv
+MIN_TRAINING_SAMPLES=20
+ML_TEST_SIZE=0.2
+ML_RANDOM_STATE=42
+MODEL_DIR=models
+```
+
+Relative model paths are resolved from the repository root, not the shell's current directory.
 
 ## Start the backend
 
@@ -106,7 +117,34 @@ npm run build
 }
 ```
 
-`feature_1`, `feature_2`, and `feature_3` are required numeric values. `label` is an optional integer. The POST endpoint returns the persisted record, including its ID, UTC timestamps, and future-training metadata. Listing is ordered by ID and accepts `skip >= 0` plus `limit` from 1 through 100.
+`feature_1`, `feature_2`, and `feature_3` are required numeric values. `label` is optional and, when supplied, must be `0` or `1`. The POST endpoint returns the persisted record, including its ID, UTC timestamps, and training metadata. Listing is ordered by ID and accepts `skip >= 0` plus `limit` from 1 through 100.
+
+## Run initial model training
+
+Add at least the configured number of labelled samples through `POST /api/data` or the frontend form, then run:
+
+```bash
+cd backend
+python -m app.ml.train
+```
+
+The command loads labelled rows, validates binary labels, performs a reproducible train/test split, fits a single scikit-learn `Pipeline` containing median imputation, standard scaling, and logistic regression, evaluates the held-out set, and writes a concise summary.
+
+To apply database migrations manually without starting FastAPI or training:
+
+```bash
+cd backend
+python -m alembic upgrade head
+```
+
+Successful artifacts are stored as immutable files under the root `models/` directory:
+
+```text
+models/model_v1.joblib
+models/model_v2.joblib
+```
+
+Model binaries are ignored by Git. Every attempt reserves a unique model version and training batch. Completed runs store metrics, confusion matrix, parameters, artifact checksum, exact sample IDs, and status in `training_runs`. Sample training metadata is updated in the same final transaction. Failed runs retain their error details and do not modify sample training flags.
 
 ## PostgreSQL readiness and migrations
 
@@ -116,6 +154,6 @@ Persistence is isolated behind a repository interface, so services and API route
 DATABASE_URL=postgresql+psycopg://user:password@localhost/app
 ```
 
-Install the appropriate PostgreSQL driver when making that switch. Alembic is intentionally not included in Phase 2: there is only one initial development schema, and `Base.metadata.create_all()` is sufficient for clean local initialization. Add Alembic before the first deployed schema change or whenever existing databases must be upgraded without recreation.
+Install the appropriate PostgreSQL driver when making that switch. Alembic now owns schema evolution: `phase2_samples` records the original table and `phase3_training_runs` adds the training registry. Startup runs upgrades automatically, while the manual command above remains available for controlled environments.
 
-Tests override FastAPI's database dependency and create a fresh SQLite file in pytest's temporary directory for every test. They never use `backend/app.db`.
+Tests create fresh SQLite files and model directories under pytest's temporary directory. They never use `backend/app.db` or the real `models/` artifact directory.

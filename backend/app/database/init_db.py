@@ -1,10 +1,35 @@
-from sqlalchemy import Engine
+from pathlib import Path
 
-from app.database.base import Base
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import Engine, inspect
+
 from app.database.session import engine
-from app.models.sample import Sample  # noqa: F401
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PHASE_2_REVISION = "phase2_samples"
+HEAD_REVISION = "phase3_training_runs"
+
+
+def _alembic_config() -> Config:
+    config = Config(str(BACKEND_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    return config
 
 
 def init_db(database_engine: Engine = engine) -> None:
-    """Create development tables; migrations can replace this later."""
-    Base.metadata.create_all(bind=database_engine)
+    """Upgrade a new or existing development database to the latest schema."""
+    config = _alembic_config()
+    with database_engine.begin() as connection:
+        table_names = set(inspect(connection).get_table_names())
+        config.attributes["connection"] = connection
+
+        if "alembic_version" not in table_names and "samples" in table_names:
+            adopted_revision = (
+                HEAD_REVISION
+                if "training_runs" in table_names
+                else PHASE_2_REVISION
+            )
+            command.stamp(config, adopted_revision)
+
+        command.upgrade(config, "head")
