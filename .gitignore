@@ -15,10 +15,12 @@ htmlcov/
 .venv/
 venv/
 
-# Local persistence and model artifacts
+# Local database files
 *.db
 *.sqlite
 *.sqlite3
+
+# Future local model artifacts and uploaded data
 artifacts/
 data/uploads/
 

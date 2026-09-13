@@ -1,14 +1,14 @@
 import { FormEvent, useState } from 'react'
 
 import { submitData } from '../../lib/api/data'
-import type { DataResponse } from '../../types/data'
+import type { DataRead } from '../../types/data'
 
 export function DataSubmissionForm() {
   const [feature1, setFeature1] = useState('')
   const [feature2, setFeature2] = useState('')
   const [feature3, setFeature3] = useState('')
   const [label, setLabel] = useState('')
-  const [response, setResponse] = useState<DataResponse | null>(null)
+  const [response, setResponse] = useState<DataRead | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -100,7 +100,14 @@ export function DataSubmissionForm() {
 
       {response && (
         <section className="response" aria-live="polite">
-          <h2>API response</h2>
+          <h2>Saved record</h2>
+          <p>
+            <strong>Record ID:</strong> {response.id}
+          </p>
+          <p>
+            <strong>Created:</strong>{' '}
+            {new Date(response.created_at).toLocaleString()}
+          </p>
           <pre>{JSON.stringify(response, null, 2)}</pre>
         </section>
       )}

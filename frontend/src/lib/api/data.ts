@@ -1,4 +1,4 @@
-import type { DataRequest, DataResponse } from '../../types/data'
+import type { DataCreate, DataRead } from '../../types/data'
 
 function getApiBaseUrl(): string {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
@@ -10,7 +10,7 @@ function getApiBaseUrl(): string {
   return apiBaseUrl.replace(/\/$/, '')
 }
 
-export async function submitData(payload: DataRequest): Promise<DataResponse> {
+export async function submitData(payload: DataCreate): Promise<DataRead> {
   const response = await fetch(`${getApiBaseUrl()}/api/data`, {
     method: 'POST',
     headers: {
@@ -23,5 +23,5 @@ export async function submitData(payload: DataRequest): Promise<DataResponse> {
     throw new Error(`API request failed with status ${response.status}.`)
   }
 
-  return (await response.json()) as DataResponse
+  return (await response.json()) as DataRead
 }

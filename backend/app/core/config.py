@@ -9,7 +9,9 @@ ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 class Settings(BaseSettings):
     app_name: str = "Continuous Learning ML API"
+    database_url: str
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
+    local_frontend_origin: AnyHttpUrl = "http://localhost:5173"
     codespaces_origin_regex: str = (
         r"https://[a-z0-9-]+-5173\.app\.github\.dev"
     )

@@ -1,6 +1,6 @@
 # Continuous Learning ML App
 
-A Phase 1 full-stack scaffold with a React + Vite frontend and a FastAPI backend. The current application validates a temporary feature payload and echoes it to the browser. Database persistence, machine learning, background training, and authentication are intentionally outside this phase.
+A Phase 2 full-stack application with a React + Vite frontend, FastAPI backend, and persistent SQLAlchemy storage. Incoming samples are validated, saved, and returned to the browser. Machine learning, background training, prediction, and authentication remain outside this phase.
 
 ## Prerequisites
 
@@ -17,6 +17,14 @@ cp .env.example .env
 ```
 
 The checked-in defaults connect the Vite development server at `http://localhost:5173` to FastAPI at `http://localhost:8000`. The frontend reads the backend URL from `VITE_API_BASE_URL`; application components do not hardcode it.
+
+`DATABASE_URL` is required by the backend. The development value is:
+
+```dotenv
+DATABASE_URL=sqlite:///./app.db
+```
+
+Because the documented backend command runs from `backend/`, SQLite creates the ignored database file at `backend/app.db`. FastAPI creates the current development tables during application startup.
 
 ## Start the backend
 
@@ -35,6 +43,8 @@ The backend exposes:
 
 - `GET http://localhost:8000/health`
 - `POST http://localhost:8000/api/data`
+- `GET http://localhost:8000/api/data?skip=0&limit=20`
+- `GET http://localhost:8000/api/data/{id}`
 - API documentation at `http://localhost:8000/docs`
 
 ## Start the frontend
@@ -51,14 +61,20 @@ Open `http://localhost:5173`.
 
 ### GitHub Codespaces
 
-Both development servers must listen on all interfaces. Start the backend with the command above, then start the frontend with its public backend URL:
+The dev container automatically forwards ports 5173 and 8000 whenever you attach. It also runs `.devcontainer/setup-codespaces.sh`, which:
+
+- builds the frontend and backend URLs from the Codespaces-provided environment variables;
+- writes them to the ignored `.env` file; and
+- makes backend port 8000 public through GitHub CLI.
+
+After rebuilding the dev container once, start the frontend with:
 
 ```bash
 cd frontend
-VITE_API_BASE_URL="https://${CODESPACE_NAME}-8000.app.github.dev" npm run dev -- --host 0.0.0.0
+npm run dev -- --host 0.0.0.0
 ```
 
-Set ports 5173 and 8000 to the visibility appropriate for your Codespace. Backend CORS accepts the local Vite origin and Codespaces origins on port 5173; both are configurable in `.env`.
+No manual URL replacement or port-visibility change is normally needed. An organization-level Codespaces policy can still prohibit public ports; in that case the setup script prints a warning.
 
 ## Run checks
 
@@ -77,7 +93,7 @@ npm install
 npm run build
 ```
 
-## Phase 1 API payload
+## Phase 2 data API
 
 `POST /api/data` accepts JSON in this shape:
 
@@ -90,4 +106,16 @@ npm run build
 }
 ```
 
-`feature_1`, `feature_2`, and `feature_3` are required numeric values. `label` is an optional integer. The endpoint validates the request with Pydantic and returns the same fields; when the label is omitted, the response contains `"label": null`. It does not persist data or invoke model training.
+`feature_1`, `feature_2`, and `feature_3` are required numeric values. `label` is an optional integer. The POST endpoint returns the persisted record, including its ID, UTC timestamps, and future-training metadata. Listing is ordered by ID and accepts `skip >= 0` plus `limit` from 1 through 100.
+
+## PostgreSQL readiness and migrations
+
+Persistence is isolated behind a repository interface, so services and API routes do not change when the database changes. A later PostgreSQL configuration can use a SQLAlchemy URL such as:
+
+```dotenv
+DATABASE_URL=postgresql+psycopg://user:password@localhost/app
+```
+
+Install the appropriate PostgreSQL driver when making that switch. Alembic is intentionally not included in Phase 2: there is only one initial development schema, and `Base.metadata.create_all()` is sufficient for clean local initialization. Add Alembic before the first deployed schema change or whenever existing databases must be upgraded without recreation.
+
+Tests override FastAPI's database dependency and create a fresh SQLite file in pytest's temporary directory for every test. They never use `backend/app.db`.
