@@ -12,6 +12,13 @@ export class ApiError extends Error {
   }
 }
 
+export function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  )
+}
+
 function getApiBaseUrl(): string {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
@@ -45,6 +52,15 @@ export async function apiRequest<T>(
   try {
     response = await fetch(`${getApiBaseUrl()}${path}`, options)
   } catch (error) {
+    // Request cancellation is expected during component cleanup and polling.
+    // Preserve AbortError so callers can ignore it instead of showing a false
+    // network failure.
+    if (options?.signal?.aborted) {
+      throw new DOMException('The request was cancelled.', 'AbortError')
+    }
+    if (isAbortError(error)) {
+      throw error
+    }
     throw new Error(
       error instanceof Error
         ? `Network error: ${error.message}`

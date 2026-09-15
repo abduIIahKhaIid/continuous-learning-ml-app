@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     training_task_time_limit_seconds: int = Field(default=3600, ge=1)
     training_stale_timeout_seconds: int = Field(default=3600, ge=1)
     worker_health_timeout_seconds: float = Field(default=1.0, gt=0, le=10)
+    worker_health_cache_seconds: float = Field(default=5.0, ge=0, le=60)
     redis_url: str = "redis://localhost:6379/2"
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
     local_frontend_origin: AnyHttpUrl = "http://localhost:5173"

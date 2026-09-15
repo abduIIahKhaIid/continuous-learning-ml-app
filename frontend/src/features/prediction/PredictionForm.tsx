@@ -1,6 +1,13 @@
 import { FormEvent, useState } from 'react'
 
 import { submitPrediction } from '../../lib/api/predictions'
+import {
+  alertErrorClass,
+  alertSuccessClass,
+  inputClass,
+  labelClass,
+  primaryButtonClass,
+} from '../../lib/ui'
 import type { PredictionResponse } from '../../types/prediction'
 
 interface PredictionFormProps {
@@ -50,77 +57,44 @@ export function PredictionForm({
 
   return (
     <>
-      <form className="data-form" onSubmit={handleSubmit}>
-        <label htmlFor="prediction-feature-1">Feature 1</label>
-        <input
-          id="prediction-feature-1"
-          name="feature_1"
-          type="number"
-          step="any"
-          required
-          value={feature1}
-          onChange={(event) => setFeature1(event.target.value)}
-          placeholder="2.5"
-        />
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-2"><label className={labelClass} htmlFor="prediction-feature-1">Feature 1</label><input className={inputClass} id="prediction-feature-1" name="feature_1" type="number" step="any" required value={feature1} onChange={(event) => setFeature1(event.target.value)} placeholder="2.50" /></div>
+          <div className="grid gap-2"><label className={labelClass} htmlFor="prediction-feature-2">Feature 2</label><input className={inputClass} id="prediction-feature-2" name="feature_2" type="number" step="any" required value={feature2} onChange={(event) => setFeature2(event.target.value)} placeholder="4.10" /></div>
+          <div className="grid gap-2"><label className={labelClass} htmlFor="prediction-feature-3">Feature 3</label><input className={inputClass} id="prediction-feature-3" name="feature_3" type="number" step="any" required value={feature3} onChange={(event) => setFeature3(event.target.value)} placeholder="6.70" /></div>
+        </div>
 
-        <label htmlFor="prediction-feature-2">Feature 2</label>
-        <input
-          id="prediction-feature-2"
-          name="feature_2"
-          type="number"
-          step="any"
-          required
-          value={feature2}
-          onChange={(event) => setFeature2(event.target.value)}
-          placeholder="4.1"
-        />
-
-        <label htmlFor="prediction-feature-3">Feature 3</label>
-        <input
-          id="prediction-feature-3"
-          name="feature_3"
-          type="number"
-          step="any"
-          required
-          value={feature3}
-          onChange={(event) => setFeature3(event.target.value)}
-          placeholder="6.7"
-        />
-
-        <button type="submit" disabled={isSubmitting}>
+        <button className={`${primaryButtonClass} mt-2 w-full`} type="submit" disabled={isSubmitting}>
+          {isSubmitting && <span className="size-4 animate-spin rounded-full border-2 border-slate-900/30 border-t-slate-950 motion-reduce:animate-none" />}
           {isSubmitting ? 'Predicting…' : 'Make prediction'}
         </button>
       </form>
 
       {error && (
-        <p className="message error" role="alert">
+        <p className={alertErrorClass} role="alert">
           {error}
         </p>
       )}
 
       {result && (
-        <section className="response prediction-result" aria-live="polite">
-          <h2>Prediction result</h2>
-          <dl>
-            <div>
-              <dt>Predicted class</dt>
-              <dd>{result.predicted_class}</dd>
+        <section className={alertSuccessClass} aria-live="polite">
+          <div className="mb-3 flex items-center justify-between"><h4 className="font-bold text-white">Prediction complete</h4><span className="rounded-full bg-emerald-300/15 px-2.5 py-1 text-xs font-bold">ID #{result.prediction_id}</span></div>
+          <dl className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-slate-950/40 p-3">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Predicted class</dt>
+              <dd className="mt-1 text-lg font-black text-white">{result.predicted_class}</dd>
             </div>
-            <div>
-              <dt>Class 1 probability</dt>
-              <dd>
+            <div className="rounded-lg bg-slate-950/40 p-3">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Probability</dt>
+              <dd className="mt-1 font-bold text-white">
                 {result.probability === null
                   ? 'Not available'
                   : `${(result.probability * 100).toFixed(2)}%`}
               </dd>
             </div>
-            <div>
-              <dt>Model version</dt>
-              <dd>{result.model_version}</dd>
-            </div>
-            <div>
-              <dt>Prediction ID</dt>
-              <dd>{result.prediction_id}</dd>
+            <div className="col-span-2 rounded-lg bg-slate-950/40 p-3">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Model version</dt>
+              <dd className="mt-1 font-mono text-sm font-bold text-white">{result.model_version}</dd>
             </div>
           </dl>
         </section>

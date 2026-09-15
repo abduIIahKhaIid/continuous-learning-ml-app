@@ -28,9 +28,11 @@ export function fetchModelStatus(signal?: AbortSignal): Promise<ModelStatus> {
 
 export function fetchPredictions(
   signal?: AbortSignal,
+  skip = 0,
+  limit = 20,
 ): Promise<PredictionHistoryItem[]> {
   return apiRequest<PredictionHistoryItem[]>(
-    '/api/predictions?skip=0&limit=20',
+    `/api/predictions?skip=${skip}&limit=${limit}`,
     { signal },
   )
 }

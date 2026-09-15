@@ -58,6 +58,19 @@ upsert_env_value "VITE_API_BASE_URL" "${backend_url}"
 
 echo "Updated .env with this Codespace's frontend and backend URLs."
 
+# FastAPI and Celery run on the Codespace VM, so the Redis port published by
+# Compose is correctly reached through localhost. Start it on every attach so
+# a restarted Codespace does not leave the worker without its broker.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  if docker compose -f "${repository_root}/compose.yaml" up -d redis; then
+    echo "Redis is running on localhost:6379 inside the Codespace."
+  else
+    echo "Could not start Redis automatically; run 'docker compose up -d redis'." >&2
+  fi
+else
+  echo "Docker is not ready; run 'docker compose up -d redis' before Celery." >&2
+fi
+
 if ! command -v gh >/dev/null 2>&1; then
   echo "GitHub CLI is unavailable; port 8000 visibility was not changed." >&2
   exit 0

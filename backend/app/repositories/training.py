@@ -1,8 +1,9 @@
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,13 @@ from app.models.training_run import TrainingRun
 SERVABLE_STATUSES = ("completed", "promoted")
 IN_PROGRESS_STATUSES = ("queued", "running", "training")
 AUTOMATIC_CONCURRENCY_SLOT = "automatic"
+
+
+@dataclass(frozen=True)
+class SampleCounts:
+    total: int
+    labelled: int
+    verified: int
 
 
 class ModelVersionConflictError(Exception):
@@ -102,6 +110,25 @@ class SqlAlchemyTrainingRepository:
             Sample.last_triggered_training_run_id.is_(None),
         )
         return int(self._session.scalar(statement) or 0)
+
+    def get_sample_counts(self) -> SampleCounts:
+        verified = (
+            Sample.source_prediction_id.is_not(None)
+            & Sample.label.in_((0, 1))
+        )
+        statement = select(
+            func.count(Sample.id),
+            func.sum(case((Sample.label.is_not(None), 1), else_=0)),
+            func.sum(case((verified, 1), else_=0)),
+        )
+        total, labelled, verified_count = self._session.execute(
+            statement
+        ).one()
+        return SampleCounts(
+            total=int(total or 0),
+            labelled=int(labelled or 0),
+            verified=int(verified_count or 0),
+        )
 
     def list_model_versions(
         self, *, completed_only: bool = False

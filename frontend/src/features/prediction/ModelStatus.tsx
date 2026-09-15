@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { fetchModelStatus } from '../../lib/api/predictions'
+import { isAbortError } from '../../lib/api/client'
+import { statusBaseClass, statusTone } from '../../lib/ui'
 import type { ModelStatus as ModelStatusData } from '../../types/prediction'
 
 interface ModelStatusProps {
@@ -14,32 +16,41 @@ export function ModelStatus({ refreshToken = 0 }: ModelStatusProps) {
 
   useEffect(() => {
     const controller = new AbortController()
+    let isCurrent = true
+    setIsLoading(true)
+    setError(null)
     fetchModelStatus(controller.signal)
-      .then(setModel)
+      .then((result) => {
+        if (isCurrent) setModel(result)
+      })
       .catch((requestError: unknown) => {
-        if (requestError instanceof DOMException && requestError.name === 'AbortError') {
-          return
-        }
+        if (!isCurrent) return
+        if (isAbortError(requestError)) return
         setError(
           requestError instanceof Error
             ? requestError.message
             : 'Unable to load model status.',
         )
       })
-      .finally(() => setIsLoading(false))
+      .finally(() => {
+        if (isCurrent) setIsLoading(false)
+      })
 
-    return () => controller.abort()
+    return () => {
+      isCurrent = false
+      controller.abort()
+    }
   }, [refreshToken])
 
   if (isLoading) {
-    return <p className="model-status">Checking model status…</p>
+    return <p className={`${statusBaseClass} ${statusTone('neutral')}`}><span className="mr-2 size-2 animate-pulse rounded-full bg-slate-400 motion-reduce:animate-none" />Checking status…</p>
   }
   if (error) {
-    return <p className="model-status error">{error}</p>
+    return <p className={`${statusBaseClass} ${statusTone('failed')}`}>{error}</p>
   }
   if (!model?.model_available) {
     return (
-      <p className="model-status unavailable">
+      <p className={`${statusBaseClass} ${statusTone('warning')}`}>
         {model?.detail ?? 'No trained model available'}
         {model?.model_version ? ` (${model.model_version})` : ''}
       </p>
@@ -47,8 +58,9 @@ export function ModelStatus({ refreshToken = 0 }: ModelStatusProps) {
   }
 
   return (
-    <p className="model-status ready">
-      Active model: <strong>{model.model_version}</strong> · Status: Ready
+    <p className={`${statusBaseClass} ${statusTone('ready')}`}>
+      <span className="mr-2 size-1.5 rounded-full bg-emerald-300" />
+      Active: <strong className="ml-1 font-mono">{model.model_version}</strong>
     </p>
   )
 }

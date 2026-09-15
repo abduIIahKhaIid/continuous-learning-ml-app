@@ -9,9 +9,16 @@ export type TrainingRunStatus =
 
 export interface TrainingStatus {
   auto_retrain_enabled: boolean
+  total_samples: number
+  labelled_samples: number
+  unlabelled_samples: number
+  verified_feedback_samples: number
   new_verified_samples: number
   retrain_threshold: number
+  new_verified_samples_needed: number
   minimum_training_samples: number
+  verified_samples_needed_for_minimum: number
+  retraining_data_ready: boolean
   training_in_progress: boolean
   queued_jobs: number
   running_jobs: number

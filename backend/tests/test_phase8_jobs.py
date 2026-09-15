@@ -269,6 +269,45 @@ def test_worker_health_keeps_redis_and_worker_states_separate() -> None:
     assert health.celery_worker_available is True
 
 
+def test_worker_health_caches_dependency_checks() -> None:
+    class CountingRedis(FakeRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self.ping_count = 0
+
+        def ping(self) -> bool:
+            self.ping_count += 1
+            return True
+
+    class Inspector:
+        def ping(self):
+            return {"worker@local": {"ok": "pong"}}
+
+    class Control:
+        def __init__(self) -> None:
+            self.inspect_count = 0
+
+        def inspect(self, *, timeout: float) -> Inspector:
+            self.inspect_count += 1
+            return Inspector()
+
+    class CeleryApp:
+        control = Control()
+
+    redis = CountingRedis()
+    celery = CeleryApp()
+    service = InfrastructureHealthService(
+        redis_client=redis,
+        celery_app=celery,  # type: ignore[arg-type]
+        timeout_seconds=0.5,
+        cache_seconds=5.0,
+    )
+
+    assert service.check() == service.check()
+    assert redis.ping_count == 1
+    assert celery.control.inspect_count == 1
+
+
 def test_worker_health_reports_dependency_outage_without_raising() -> None:
     class UnavailableRedis(FakeRedis):
         def ping(self) -> bool:

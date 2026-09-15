@@ -44,11 +44,24 @@ def get_training_status(
     latest_terminal = repository.get_latest_terminal_run()
     current = repository.get_current_run()
     health = infrastructure.check()
+    counts = repository.get_sample_counts()
+    new_verified = repository.count_unused_verified_samples()
+    new_needed = max(0, config.retrain_min_new_samples - new_verified)
+    minimum_needed = max(
+        0, config.minimum_training_samples - counts.verified
+    )
     return TrainingStatusResponse(
         auto_retrain_enabled=config.enabled,
-        new_verified_samples=repository.count_unused_verified_samples(),
+        total_samples=counts.total,
+        labelled_samples=counts.labelled,
+        unlabelled_samples=counts.total - counts.labelled,
+        verified_feedback_samples=counts.verified,
+        new_verified_samples=new_verified,
         retrain_threshold=config.retrain_min_new_samples,
+        new_verified_samples_needed=new_needed,
         minimum_training_samples=config.minimum_training_samples,
+        verified_samples_needed_for_minimum=minimum_needed,
+        retraining_data_ready=(new_needed == 0 and minimum_needed == 0),
         training_in_progress=repository.has_training_in_progress(),
         active_model_version=(
             active.model_version if active is not None else None

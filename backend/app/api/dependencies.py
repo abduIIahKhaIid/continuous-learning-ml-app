@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -90,13 +91,19 @@ async def get_training_dispatcher(
     )
 
 
-async def get_infrastructure_health_service() -> InfrastructureHealthService:
+@lru_cache
+def _cached_infrastructure_health_service() -> InfrastructureHealthService:
     settings = get_settings()
     return InfrastructureHealthService(
         redis_client=Redis.from_url(settings.redis_url),
         celery_app=celery_app,
         timeout_seconds=settings.worker_health_timeout_seconds,
+        cache_seconds=settings.worker_health_cache_seconds,
     )
+
+
+async def get_infrastructure_health_service() -> InfrastructureHealthService:
+    return _cached_infrastructure_health_service()
 
 
 async def get_monitoring_service(

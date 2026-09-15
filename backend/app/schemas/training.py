@@ -41,9 +41,16 @@ class TrainingRunSummary(BaseModel):
 
 class TrainingStatusResponse(BaseModel):
     auto_retrain_enabled: bool
+    total_samples: int
+    labelled_samples: int
+    unlabelled_samples: int
+    verified_feedback_samples: int
     new_verified_samples: int
     retrain_threshold: int
+    new_verified_samples_needed: int
     minimum_training_samples: int
+    verified_samples_needed_for_minimum: int
+    retraining_data_ready: bool
     training_in_progress: bool
     active_model_version: str | None
     last_training_run: TrainingRunSummary | None

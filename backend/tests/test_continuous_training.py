@@ -528,6 +528,13 @@ async def test_training_check_status_and_history_endpoints(
 ) -> None:
     client, scheduled = training_client
     add_verified_samples(db_session, 10)
+    db_session.add_all(
+        [
+            Sample(feature_1=1.0, feature_2=2.0, feature_3=3.0, label=1),
+            Sample(feature_1=4.0, feature_2=5.0, feature_3=6.0, label=None),
+        ]
+    )
+    db_session.commit()
 
     check = await client.post("/api/training/check")
     status = await client.get("/api/training/status")
@@ -544,7 +551,14 @@ async def test_training_check_status_and_history_endpoints(
     assert check.json()["task_id"] == f"task-{check.json()['training_run_id']}"
     assert status.status_code == 200
     assert status.json()["training_in_progress"] is True
+    assert status.json()["total_samples"] == 12
+    assert status.json()["labelled_samples"] == 11
+    assert status.json()["unlabelled_samples"] == 1
+    assert status.json()["verified_feedback_samples"] == 10
     assert status.json()["new_verified_samples"] == 10
+    assert status.json()["new_verified_samples_needed"] == 0
+    assert status.json()["verified_samples_needed_for_minimum"] == 0
+    assert status.json()["retraining_data_ready"] is True
     assert status.json()["queued_jobs"] == 1
     assert status.json()["redis_available"] is True
     assert status.json()["celery_worker_available"] is True
