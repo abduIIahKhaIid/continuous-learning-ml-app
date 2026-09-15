@@ -159,17 +159,21 @@ export function PredictionHistory({
     return <p className={alertErrorClass} role="alert">{loadError}</p>
   }
 
+  const feedbackCoverage =
+    summary && summary.total_predictions > 0
+      ? (summary.feedback_received / summary.total_predictions) * 100
+      : null
+
   return (
     <>
       {summary && (
-        <div className="mb-6 grid gap-3 sm:grid-cols-3" aria-label="Verified feedback summary">
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Verified</span><strong className="mt-1 block text-2xl text-white">{summary.feedback_received}</strong></div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pending</span><strong className="mt-1 block text-2xl text-white">{summary.feedback_pending}</strong></div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Accuracy</span><strong className="mt-1 block text-2xl text-white">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2" aria-label="Verified feedback quality">
+          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Verified accuracy</span><strong className="mt-1 block text-2xl text-white">
             {summary.verified_accuracy === null
               ? 'Not available'
               : `${(summary.verified_accuracy * 100).toFixed(1)}%`}
           </strong></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Feedback coverage</span><strong className="mt-1 block text-2xl text-white">{feedbackCoverage === null ? 'Not available' : `${feedbackCoverage.toFixed(1)}%`}</strong></div>
         </div>
       )}
 

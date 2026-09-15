@@ -101,7 +101,7 @@ function App() {
                 <div className="absolute right-0 top-0 size-32 rounded-full bg-cyan-400/5 blur-3xl" />
                 <div className="relative mb-7 flex items-start gap-4">
                   <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 text-cyan-300"><svg aria-hidden="true" className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></span>
-                  <div><h3 className="text-lg font-bold text-white">Add labelled sample</h3><p className="mt-1 text-sm leading-6 text-slate-400">Store verified training data with an optional binary label.</p></div>
+                  <div><h3 className="text-lg font-bold text-white">Add dataset sample</h3><p className="mt-1 text-sm leading-6 text-slate-400">Store a manual dataset row. Labels added here support manual training but do not trigger automatic retraining.</p></div>
                 </div>
                 <DataSubmissionForm onDataCreated={() => setTrainingRefreshToken((current) => current + 1)} />
               </article>
