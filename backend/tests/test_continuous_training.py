@@ -11,7 +11,8 @@ import app.ml.retraining_service as retraining_module
 from app.api.dependencies import (
     get_continuous_training_config,
     get_continuous_training_coordinator,
-    get_training_job_runner,
+    get_training_dispatcher,
+    get_infrastructure_health_service,
     get_model_directory,
     get_model_loader,
 )
@@ -28,6 +29,8 @@ from app.models.prediction import Prediction
 from app.models.sample import Sample
 from app.models.training_run import TrainingRun
 from app.repositories.training import SqlAlchemyTrainingRepository
+from app.services.infrastructure_health import WorkerHealth
+from app.services.training_dispatch import TrainingDispatcher
 
 
 def continuous_config(
@@ -467,6 +470,19 @@ async def training_client(
     )
     scheduled: list[int] = []
 
+    class FakeTaskResult:
+        def __init__(self, task_id: str) -> None:
+            self.id = task_id
+
+    class FakeTaskSender:
+        def apply_async(self, *, args: list[int], queue: str):
+            scheduled.append(args[0])
+            return FakeTaskResult(f"task-{args[0]}")
+
+    class FakeInfrastructure:
+        def check(self) -> WorkerHealth:
+            return WorkerHealth(True, True)
+
     async def override_get_db() -> AsyncIterator[Session]:
         yield db_session
 
@@ -476,15 +492,25 @@ async def training_client(
     async def override_config() -> ContinuousTrainingConfig:
         return config
 
-    async def override_runner():
-        return scheduled.append
+    async def override_dispatcher() -> TrainingDispatcher:
+        return TrainingDispatcher(
+            repository=SqlAlchemyTrainingRepository(db_session),
+            task_sender=FakeTaskSender(),
+            queue_name="training",
+        )
+
+    async def override_infrastructure() -> FakeInfrastructure:
+        return FakeInfrastructure()
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[
         get_continuous_training_coordinator
     ] = override_coordinator
     app.dependency_overrides[get_continuous_training_config] = override_config
-    app.dependency_overrides[get_training_job_runner] = override_runner
+    app.dependency_overrides[get_training_dispatcher] = override_dispatcher
+    app.dependency_overrides[
+        get_infrastructure_health_service
+    ] = override_infrastructure
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -506,19 +532,34 @@ async def test_training_check_status_and_history_endpoints(
     check = await client.post("/api/training/check")
     status = await client.get("/api/training/status")
     history = await client.get("/api/training/runs?skip=0&limit=1")
+    detail = await client.get(
+        f"/api/training/runs/{check.json()['training_run_id']}"
+    )
+    worker_health = await client.get("/api/system/worker-health")
 
-    assert check.status_code == 200
+    assert check.status_code == 202
     assert check.json()["eligible"] is True
     assert check.json()["training_scheduled"] is True
     assert scheduled == [check.json()["training_run_id"]]
+    assert check.json()["task_id"] == f"task-{check.json()['training_run_id']}"
     assert status.status_code == 200
     assert status.json()["training_in_progress"] is True
     assert status.json()["new_verified_samples"] == 10
+    assert status.json()["queued_jobs"] == 1
+    assert status.json()["redis_available"] is True
+    assert status.json()["celery_worker_available"] is True
+    assert status.json()["current_training_run"]["progress_stage"] == "queued"
     assert history.status_code == 200
     assert len(history.json()) == 1
     assert history.json()[0]["status"] == "queued"
     assert "model_path" not in history.json()[0]
     assert "artifact_checksum" not in history.json()[0]
+    assert detail.status_code == 200
+    assert detail.json()["task_id"] == check.json()["task_id"]
+    assert worker_health.json() == {
+        "redis_available": True,
+        "celery_worker_available": True,
+    }
 
 
 @pytest.mark.anyio
@@ -572,6 +613,74 @@ async def test_committed_feedback_schedules_threshold_check_once(
 
 
 @pytest.mark.anyio
+async def test_feedback_persists_when_celery_dispatch_is_unavailable(
+    training_client: tuple[AsyncClient, list[int]],
+    db_session: Session,
+) -> None:
+    client, _ = training_client
+    add_verified_samples(db_session, 5, used=True)
+    add_verified_samples(db_session, 4)
+    source = ensure_source_run(db_session)
+    pending = Prediction(
+        feature_1=1.0,
+        feature_2=1.0,
+        feature_3=1.0,
+        predicted_class=1,
+        prediction_probability=0.8,
+        model_version=source.model_version,
+    )
+    db_session.add(pending)
+    db_session.commit()
+
+    class UnavailableSender:
+        def apply_async(self, *, args: list[int], queue: str):
+            raise ConnectionError("Redis unavailable")
+
+    async def unavailable_dispatcher() -> TrainingDispatcher:
+        return TrainingDispatcher(
+            repository=SqlAlchemyTrainingRepository(db_session),
+            task_sender=UnavailableSender(),
+            queue_name="training",
+        )
+
+    app.dependency_overrides[
+        get_training_dispatcher
+    ] = unavailable_dispatcher
+    response = await client.patch(
+        f"/api/predictions/{pending.id}/feedback",
+        json={"actual_label": 1},
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(pending)
+    assert pending.feedback_received is True
+    run = SqlAlchemyTrainingRepository(db_session).get_current_run()
+    assert run is not None and run.status == "queued"
+    assert "Redis unavailable" in (run.dispatch_error or "")
+
+
+@pytest.mark.anyio
+async def test_reconciliation_redispatches_only_recoverable_queued_runs(
+    training_client: tuple[AsyncClient, list[int]],
+    db_session: Session,
+) -> None:
+    client, scheduled = training_client
+    add_verified_samples(db_session, 10)
+    checked = await client.post("/api/training/check")
+    run = db_session.get(TrainingRun, checked.json()["training_run_id"])
+    assert run is not None
+    run.celery_task_id = None
+    run.dispatch_error = "Simulated publish gap"
+    db_session.commit()
+
+    response = await client.post("/api/training/reconcile")
+
+    assert response.status_code == 200
+    assert response.json()["recovered_count"] == 1
+    assert scheduled == [run.id, run.id]
+
+
+@pytest.mark.anyio
 async def test_next_prediction_uses_newly_promoted_model(
     db_session: Session,
     tmp_path: Path,
@@ -618,3 +727,64 @@ async def test_next_prediction_uses_newly_promoted_model(
 
     assert response.status_code == 201
     assert response.json()["model_version"] == result.model_version
+
+
+@pytest.mark.anyio
+async def test_api_cache_detects_promotion_from_separate_worker_process(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    samples = add_verified_samples(db_session, 20)
+    model_dir = tmp_path / "models"
+    create_active_model(db_session, model_dir, samples, poor=True)
+    api_loader = ModelLoader()
+    api_loader.load(
+        SqlAlchemyTrainingRepository(db_session), model_dir=model_dir
+    )
+    assert api_loader.loaded_model_version == "model_v1"
+
+    config = continuous_config(model_dir, minimum=20)
+    check = reserve(db_session, config)
+    worker_loader = ModelLoader()
+    result = RetrainingService(
+        session_factory=make_factory(db_session),
+        config=config,
+        loader=worker_loader,
+    ).execute(check.training_run_id)
+    assert result.status == "promoted"
+    assert api_loader.loaded_model_version == "model_v1"
+
+    factory = make_factory(db_session)
+
+    async def override_get_db() -> AsyncIterator[Session]:
+        with factory() as session:
+            yield session
+
+    async def override_loader() -> ModelLoader:
+        return api_loader
+
+    async def override_model_dir() -> Path:
+        return model_dir
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_model_loader] = override_loader
+    app.dependency_overrides[get_model_directory] = override_model_dir
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/api/predict",
+                json={
+                    "feature_1": 1.0,
+                    "feature_2": 1.0,
+                    "feature_3": 1.0,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["model_version"] == result.model_version
+    assert api_loader.loaded_model_version == result.model_version

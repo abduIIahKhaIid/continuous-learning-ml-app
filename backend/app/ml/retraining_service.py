@@ -40,7 +40,9 @@ class RetrainingService:
         self._config = config
         self._loader = loader
 
-    def execute(self, run_id: int) -> TrainingExecutionResult:
+    def execute(
+        self, run_id: int, *, raise_failures: bool = False
+    ) -> TrainingExecutionResult:
         artifact: ArtifactInfo | None = None
         finalized = False
         model_version: str | None = None
@@ -82,6 +84,7 @@ class RetrainingService:
                 model_dir=self._config.model_dir,
             )
             split = create_reproducible_split(dataset, training_config)
+            self._update_progress(run_id, "training")
 
             active_metrics: EvaluationMetrics | None = None
             if active_version is not None:
@@ -105,6 +108,7 @@ class RetrainingService:
                 )
 
             candidate = train_candidate_on_split(split, training_config)
+            self._update_progress(run_id, "evaluating")
             reference_profiles = build_reference_profiles(split.x_train)
             decision = decide_promotion(
                 candidate=candidate.metrics,
@@ -145,6 +149,7 @@ class RetrainingService:
                 if active_metrics is not None
                 else None
             )
+            self._update_progress(run_id, "promoting")
             with self._session_factory() as session:
                 completed_run = SqlAlchemyTrainingRepository(
                     session
@@ -192,6 +197,8 @@ class RetrainingService:
             )
             if artifact is not None and not finalized:
                 artifact.path.unlink(missing_ok=True)
+            if raise_failures:
+                raise
             with self._session_factory() as session:
                 SqlAlchemyTrainingRepository(session).fail_training_run(
                     run_id, _safe_failure_reason(error)
@@ -202,6 +209,10 @@ class RetrainingService:
                 status="failed",
                 reason=_safe_failure_reason(error),
             )
+
+    def _update_progress(self, run_id: int, stage: str) -> None:
+        with self._session_factory() as session:
+            SqlAlchemyTrainingRepository(session).update_progress(run_id, stage)
 
 
 def _safe_failure_reason(error: Exception) -> str:

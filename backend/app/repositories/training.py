@@ -1,5 +1,7 @@
 from typing import Any, Protocol
 
+from datetime import datetime
+
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -149,6 +151,26 @@ class SqlAlchemyTrainingRepository:
             select(TrainingRun).order_by(TrainingRun.id.desc()).limit(1)
         )
 
+    def get_current_run(self) -> TrainingRun | None:
+        return self._session.scalar(
+            select(TrainingRun)
+            .where(TrainingRun.status.in_(IN_PROGRESS_STATUSES))
+            .order_by(TrainingRun.id.desc())
+            .limit(1)
+        )
+
+    def get_latest_terminal_run(self) -> TrainingRun | None:
+        return self._session.scalar(
+            select(TrainingRun)
+            .where(
+                TrainingRun.status.in_(
+                    ("completed", "failed", "rejected", "promoted")
+                )
+            )
+            .order_by(TrainingRun.id.desc())
+            .limit(1)
+        )
+
     def list_runs(self, *, skip: int, limit: int) -> list[TrainingRun]:
         statement = (
             select(TrainingRun)
@@ -157,6 +179,84 @@ class SqlAlchemyTrainingRepository:
             .limit(limit)
         )
         return list(self._session.scalars(statement))
+
+    def list_recoverable_queued_runs(self, *, limit: int = 100) -> list[TrainingRun]:
+        statement = (
+            select(TrainingRun)
+            .where(
+                TrainingRun.status == "queued",
+                (
+                    TrainingRun.celery_task_id.is_(None)
+                    | TrainingRun.dispatch_error.is_not(None)
+                ),
+            )
+            .order_by(TrainingRun.id)
+            .limit(limit)
+        )
+        return list(self._session.scalars(statement))
+
+    def count_runs_by_status(self, statuses: tuple[str, ...]) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count(TrainingRun.id)).where(
+                    TrainingRun.status.in_(statuses)
+                )
+            )
+            or 0
+        )
+
+    def record_dispatch(self, run_id: int, task_id: str) -> None:
+        run = self._session.get(TrainingRun, run_id)
+        if run is None:
+            raise LookupError(f"Training run {run_id} no longer exists.")
+        run.celery_task_id = task_id
+        run.dispatched_at = utc_now()
+        run.dispatch_error = None
+        try:
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
+
+    def record_dispatch_failure(self, run_id: int, message: str) -> None:
+        self._session.rollback()
+        run = self._session.get(TrainingRun, run_id)
+        if run is None or run.status != "queued":
+            return
+        run.celery_task_id = None
+        run.dispatch_error = message[:1000]
+        self._session.commit()
+
+    def update_progress(self, run_id: int, stage: str) -> None:
+        run = self._session.get(TrainingRun, run_id)
+        if run is None or run.status not in IN_PROGRESS_STATUSES:
+            return
+        run.progress_stage = stage
+        run.heartbeat_at = utc_now()
+        self._session.commit()
+
+    def prepare_retry(
+        self, run_id: int, message: str, *, requeue: bool = True
+    ) -> None:
+        run = self._session.get(TrainingRun, run_id)
+        if run is None or run.status in ("completed", "failed", "rejected", "promoted"):
+            return
+        if requeue:
+            run.status = "queued"
+            run.progress_stage = "queued"
+        run.retry_count += 1
+        run.last_retry_at = utc_now()
+        run.heartbeat_at = utc_now()
+        run.error_message = message[:2000]
+        self._session.commit()
+
+    def is_run_stale(self, run: TrainingRun, *, cutoff: datetime) -> bool:
+        heartbeat = run.heartbeat_at or run.started_at
+        if run.status != "running" or heartbeat is None:
+            return False
+        if heartbeat.tzinfo is None and cutoff.tzinfo is not None:
+            cutoff = cutoff.replace(tzinfo=None)
+        return heartbeat < cutoff
 
     def has_training_in_progress(self) -> bool:
         statement = select(func.count(TrainingRun.id)).where(
@@ -228,13 +328,20 @@ class SqlAlchemyTrainingRepository:
         return run
 
     def mark_run_running(self, run_id: int) -> TrainingRun | None:
+        now = utc_now()
         result = self._session.execute(
             update(TrainingRun)
             .where(
                 TrainingRun.id == run_id,
                 TrainingRun.status == "queued",
             )
-            .values(status="running")
+            .values(
+                status="running",
+                progress_stage="preparing_data",
+                started_at=now,
+                heartbeat_at=now,
+                dispatch_error=None,
+            )
         )
         self._session.commit()
         if result.rowcount != 1:
@@ -292,6 +399,8 @@ class SqlAlchemyTrainingRepository:
                 run.promoted_at = utc_now()
             run.error_message = None
             run.completed_at = utc_now()
+            run.progress_stage = "completed"
+            run.heartbeat_at = utc_now()
             self._add_profiles(run.model_version, reference_profiles)
             self._session.add(
                 ModelEvent(
@@ -383,6 +492,8 @@ class SqlAlchemyTrainingRepository:
             run.error_message = None
             run.completed_at = now
             run.concurrency_slot = None
+            run.progress_stage = "completed"
+            run.heartbeat_at = now
             self._add_profiles(run.model_version, reference_profiles)
             self._session.add(
                 ModelEvent(
@@ -421,6 +532,8 @@ class SqlAlchemyTrainingRepository:
         run.error_message = error_message[:2000]
         run.completed_at = utc_now()
         run.concurrency_slot = None
+        run.progress_stage = "failed"
+        run.heartbeat_at = utc_now()
         self._session.commit()
 
     def _add_profiles(

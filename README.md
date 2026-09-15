@@ -1,6 +1,6 @@
 # Continuous Learning ML App
 
-A Phase 6 full-stack application with a React + Vite frontend, FastAPI backend, SQLAlchemy persistence, registry-backed prediction, immutable ground-truth feedback, and safe threshold-based automatic full retraining. True online learning, distributed workers, authentication, and production deployment are intentionally not implemented.
+A Phase 8 full-stack application with a React + Vite frontend, FastAPI backend, SQLAlchemy persistence, registry-backed prediction, immutable ground-truth feedback, Celery/Redis retraining workers, model monitoring, and safe manual rollback. Authentication and production deployment are intentionally not implemented.
 
 ## Prerequisites
 
@@ -28,6 +28,26 @@ MIN_TRAINING_SAMPLES=100
 PRIMARY_PROMOTION_METRIC=f1_score
 MIN_PROMOTION_IMPROVEMENT=0.01
 MIN_ACCEPTABLE_F1=0.60
+DRIFT_WINDOW_SIZE=200
+DRIFT_MIN_SAMPLES=50
+DRIFT_PSI_WARNING=0.10
+DRIFT_PSI_CRITICAL=0.25
+PERFORMANCE_WINDOW_SIZE=100
+PERFORMANCE_MIN_FEEDBACK_SAMPLES=30
+PERFORMANCE_WARNING_DROP=0.05
+PERFORMANCE_CRITICAL_DROP=0.10
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+REDIS_URL=redis://localhost:6379/2
+CELERY_TASK_ALWAYS_EAGER=false
+TRAINING_QUEUE_NAME=training
+TRAINING_TASK_MAX_RETRIES=3
+TRAINING_TASK_RETRY_DELAY_SECONDS=60
+TRAINING_LOCK_TIMEOUT_SECONDS=3600
+TRAINING_TASK_SOFT_TIME_LIMIT_SECONDS=3300
+TRAINING_TASK_TIME_LIMIT_SECONDS=3600
+TRAINING_STALE_TIMEOUT_SECONDS=3600
+WORKER_HEALTH_TIMEOUT_SECONDS=1.0
 ```
 
 The backend command below runs from `backend/`, so SQLite creates the ignored database at `backend/app.db`. `MODEL_DIR` is resolved from the repository root, placing ignored joblib artifacts in `models/`. FastAPI applies pending Alembic migrations at startup.
@@ -243,11 +263,190 @@ curl 'http://localhost:8000/api/training/runs?skip=0&limit=20'
 
 The React page contains a small status card with a manual Refresh button. It shows whether automatic retraining is enabled, new verified count, threshold, running state, active model, and last run.
 
-### Development limitations
+### Phase 6 historical limitation
 
-FastAPI `BackgroundTasks` is only the Phase 6 development scheduler. The orchestration and worker entry point are isolated from FastAPI, but an in-process job is not durable: a process restart can interrupt it, a crashed `queued`/`running` lease currently needs operator recovery, and multiple application instances need a real distributed lock. Phase 8 should use Celery, RQ, or another durable queue with Redis or equivalent coordination, retries, leases/timeouts, and worker monitoring.
+Phase 6 originally used FastAPI `BackgroundTasks`. Phase 8 removes that execution path: FastAPI now only commits a reserved job and publishes its identifier to Celery.
 
 If no completed model exists, prediction returns HTTP `503` with `No trained model available.` Missing, unreadable, checksum-mismatched, or corrupt artifacts also return a sanitized `503` response and are logged by the backend.
+
+## Model monitoring
+
+Phase 7 deliberately reports two independent signals:
+
+- **Data drift** asks whether recent input-feature distributions differ from the data used to fit the active model. It does not require labels and does not prove that model quality changed.
+- **Performance drift** asks whether predictions with later, verified outcomes perform worse than the active model's promotion-time validation baseline. Predictions without both `feedback_received=true` and a non-null `actual_label` are excluded from accuracy, precision, recall, F1, ROC-AUC, and the confusion matrix.
+
+Each successfully trained candidate stores compact per-feature reference statistics and a 10-bin histogram in `model_data_profiles`; raw training rows are not duplicated in the registry. Drift compares those histograms with the latest `DRIFT_WINDOW_SIZE` predictions made by the active model using Population Stability Index (PSI). With the defaults, PSI below `0.10` is stable, PSI from `0.10` to below `0.25` is warning, and PSI at least `0.25` is critical. Empty histogram bins are smoothed safely. Fewer than `DRIFT_MIN_SAMPLES` observations returns `insufficient_data`. Overall drift is critical if any feature is critical, otherwise warning if any feature is warning, otherwise stable.
+
+Performance metrics use the latest `PERFORMANCE_WINDOW_SIZE` verified-feedback predictions. Fewer than `PERFORMANCE_MIN_FEEDBACK_SAMPLES` produces `insufficient_data`. The service compares `PRIMARY_PROMOTION_METRIC`—without silently changing metrics—to the active model's stored validation value. A drop below `PERFORMANCE_WARNING_DROP` is stable, a drop up to the critical threshold is warning, and a drop at least `PERFORMANCE_CRITICAL_DROP` is critical. ROC-AUC is null unless probabilities and both actual classes are available.
+
+Feedback coverage is the fraction of predictions in the recent relevant window that have verified outcomes. Low or biased feedback coverage can make observed performance unrepresentative even when enough labels exist.
+
+Model health follows one policy: a missing/invalid active artifact or critical performance is unhealthy; warning/critical data drift or warning performance is warning; otherwise it is healthy. The response also includes the latest training status, automatic-retraining progress, new verified sample count, feedback coverage, and a non-automatic rollback recommendation for critical performance.
+
+Monitoring reads do not mutate the database:
+
+- `GET /api/monitoring/drift`
+- `GET /api/monitoring/performance`
+- `GET /api/monitoring/health`
+
+Run and persist one explicit three-part monitoring snapshot:
+
+```bash
+curl -X POST http://localhost:8000/api/monitoring/check
+```
+
+This stores `data_drift`, `performance`, and `health` snapshots. Monitoring never trains, promotes, deactivates, or rolls back a model.
+
+## Model history, comparison, and rollback
+
+Registry inspection endpoints are paginated where applicable:
+
+- `GET /api/models?skip=0&limit=20`
+- `GET /api/models/{model_version}`
+- `GET /api/models/compare?model_a=model_v1&model_b=model_v2`
+
+Model detail includes metadata, metrics, lifecycle events, and compact data profiles, but never exposes artifact paths or checksums. Comparison reports numeric metric differences and explicitly warns that historical validation results may come from different held-out datasets, so they are not necessarily statistically comparable.
+
+To switch back to a valid completed/promoted version:
+
+```bash
+curl -X POST http://localhost:8000/api/models/model_v1/rollback \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"Performance regression observed"}'
+```
+
+Before changing state, rollback verifies registry status, artifact location, SHA-256 checksum, joblib deserialization, scikit-learn Pipeline type, binary prediction behavior, and the current three-feature input contract. It then deactivates all current active rows, activates the target, and records a `rollback` event in one database transaction. Only after commit does it invalidate the inference cache, so the next prediction uses the selected version without a restart. It neither retrains nor deletes any artifact, changes samples, or consumes training triggers.
+
+**The rollback endpoint is an unauthenticated development/admin operation in Phase 7 and must be protected by authentication and authorization before production use.** The UI therefore requires confirmation, but a browser dialog is not a security boundary.
+
+### Phase 7 limitations
+
+- PSI detects distribution change; it does not establish cause or prove performance degradation.
+- Performance monitoring depends on delayed ground truth, and selective/biased feedback can bias every reported metric.
+- Historical validation metrics may use different evaluation datasets.
+- Monitoring executes inside the current FastAPI process; durable scheduling, alert delivery, Celery/Redis workers, retries, and distributed coordination are not implemented.
+- There is no automatic rollback, canary deployment, A/B testing, or authentication.
+
+## Phase 8 distributed training architecture
+
+```text
+React frontend
+      ↓ HTTP
+FastAPI ───────→ SQLAlchemy database (authoritative job/model state)
+      │
+      └── training_run_id → Celery training queue → Redis broker
+                                                    ↓
+                                             Celery worker (1 process)
+                                                    ↓
+                               existing RetrainingService / ML Pipeline
+                                                    ↓
+                                  evaluation → promotion or rejection
+                                                    ↓
+                              SQL model registry + shared model artifacts
+```
+
+FastAPI never calls `model.fit()` and never waits for training. Feedback is committed first; when the threshold is reached, the coordinator commits a `queued` training run and the dispatcher sends only its integer ID to the dedicated `training` queue. The Celery worker creates its own SQLAlchemy sessions and invokes the existing retraining, evaluation, promotion, and registry services.
+
+Redis has three isolated logical uses configured by environment variables: database `0` is the Celery broker, database `1` is the concise task-result backend, and database `2` holds infrastructure health/locking keys. SQL remains the source of truth for training status, retries, models, and metrics; the browser never connects to Redis or Celery.
+
+### Start the complete development system
+
+Install dependencies once from the repository root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements-dev.txt
+cd frontend
+npm install
+```
+
+Terminal 1 — start locally bound Redis:
+
+```bash
+docker compose up redis
+```
+
+Terminal 2 — migrate and start FastAPI:
+
+```bash
+source .venv/bin/activate
+cd backend
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Terminal 3 — start the training worker:
+
+```bash
+source .venv/bin/activate
+cd backend
+celery -A app.workers.celery_app:celery_app worker --loglevel=INFO -Q training --concurrency=1
+```
+
+Concurrency is deliberately `1` because fitting is CPU-intensive and the project permits only one candidate run at a time.
+
+Terminal 4 — start React:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Optional local Flower monitoring:
+
+```bash
+source .venv/bin/activate
+cd backend
+celery -A app.workers.celery_app:celery_app flower --port=5555
+```
+
+Flower is diagnostic only. Do not expose it publicly without authentication.
+
+### Queue reliability, locking, and retries
+
+Tasks use JSON messages/results, UTC timestamps, started-state tracking, late acknowledgement, worker-lost rejection, and a prefetch multiplier of one. Late acknowledgement allows redelivery after a worker crash, so the task checks SQL state before execution and skips terminal runs. Promotion remains an atomic SQL transaction; a failed or duplicate task cannot deliberately promote twice.
+
+An expiring Redis `ml:training:lock` prevents concurrent fitting across worker processes. Lock acquisition is an atomic `SET NX EX`, and release uses a compare-and-delete Lua script with a unique ownership token, so one worker cannot release another worker's lock. The timeout prevents a crashed worker from creating a permanent Redis deadlock. SQL's unique automatic-training slot remains an additional reservation guard.
+
+Transient Redis/network, database-connectivity, and filesystem failures retry up to `TRAINING_TASK_MAX_RETRIES` with exponential backoff and jitter. Dataset validation, insufficient class diversity, and ordinary candidate rejection are not retried. `retry_count`, sanitized last error, `last_retry_at`, `started_at`, `heartbeat_at`, and high-level `progress_stage` values are persisted. Soft time limits are recorded as failures; a hard-killed job is exposed as stale after `TRAINING_STALE_TIMEOUT_SECONDS` for controlled investigation.
+
+The queued SQL row is also a lightweight recoverable dispatch record. A known broker publish failure leaves feedback committed and the run queued with `dispatch_error`. Recover it with:
+
+```bash
+curl -X POST http://localhost:8000/api/training/reconcile
+```
+
+There remains a small publish/SQL-recording crash window because this is not a full transactional broker outbox. Reconciliation may redispatch a job, and task idempotency plus the distributed lock make that at-least-once behavior safe. Terminal and already-running jobs are not reconciled.
+
+### Job and infrastructure status
+
+- `POST /api/training/check` returns `202 Accepted`, `training_run_id`, and Celery `task_id` when dispatched.
+- `GET /api/training/status` reports queued/running counts, current stage, active model, latest result, verified sample count, Redis health, and worker health.
+- `GET /api/training/runs/{training_run_id}` reads durable SQL job state and flags stale running work without exposing tracebacks.
+- `POST /api/training/reconcile` redispatches recoverable queued jobs only.
+- `GET /api/system/worker-health` separately reports Redis and Celery-worker availability.
+- `GET /health` remains the API-process health check; worker outages do not make prediction unavailable.
+
+If Redis is unavailable, prediction continues normally and feedback remains stored. Dispatch failure is logged and recoverable from SQL. If a worker fails during training, the currently active model is not deactivated, trigger samples are not consumed before finalization, the lock expires, and the run is retryable or eventually marked failed.
+
+FastAPI and the worker may be separate processes, so in-memory cache invalidation is not relied upon. Every prediction asks the SQL registry for the active version; `ModelLoader` reuses its cache only when version and checksum still match. A worker promotion is therefore detected by the next API prediction without an application restart.
+
+### Shared storage and production notes
+
+The documented host-based setup runs FastAPI and Celery from the same repository, so both see the same `MODEL_DIR` and `backend/app.db`. If backend/worker containers are added, they must mount one shared artifact volume and use the exact same database URL. Never let each container create its own SQLite file.
+
+SQLite is suitable for this single-worker development setup but has limited write concurrency. PostgreSQL is strongly recommended for production and multi-instance deployments. Production also needs authentication/authorization around administrative endpoints, a real transactional outbox or equivalent dispatcher, managed shared/object artifact storage, secret management, alerting, and operational worker supervision.
+
+### Troubleshooting
+
+- `redis_available=false`: run `docker compose up redis`, confirm port 6379 is not occupied, and check `REDIS_URL`/broker URLs.
+- `celery_worker_available=false`: start the worker with the exact command above and confirm it consumes `-Q training`.
+- A queued job has `dispatch_error`: restore Redis and call `POST /api/training/reconcile`.
+- A running job has `is_stale=true`: inspect worker logs using its run/task IDs; do not manually promote artifacts.
+- Worker cannot see a model: ensure FastAPI and Celery share the same absolute `MODEL_DIR` and filesystem permissions.
+- SQLite lock errors under concurrency: keep worker concurrency at one for development or move `DATABASE_URL` to PostgreSQL.
 
 ## Tests and builds
 

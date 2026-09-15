@@ -1,17 +1,14 @@
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.database.session import get_db
 from app.ml.config import ContinuousTrainingConfig
-from app.ml.continuous_training import (
-    ContinuousTrainingCoordinator,
-    run_reserved_training,
-)
+from app.ml.continuous_training import ContinuousTrainingCoordinator
 from app.ml.model_loader import ModelLoader, model_loader
 from app.repositories.data import SqlAlchemyDataRepository
 from app.repositories.models import SqlAlchemyModelRepository
@@ -21,6 +18,10 @@ from app.repositories.training import SqlAlchemyTrainingRepository
 from app.services.feedback import FeedbackService
 from app.services.models import ModelService
 from app.services.monitoring import MonitoringService
+from app.services.infrastructure_health import InfrastructureHealthService
+from app.services.training_dispatch import TrainingDispatcher
+from app.workers.celery_app import celery_app
+from app.workers.tasks import run_retraining_task
 
 
 async def get_data_repository(
@@ -78,8 +79,24 @@ async def get_continuous_training_config() -> ContinuousTrainingConfig:
     return ContinuousTrainingConfig.from_settings(get_settings())
 
 
-async def get_training_job_runner() -> Callable[[int], None]:
-    return run_reserved_training
+async def get_training_dispatcher(
+    session: Annotated[Session, Depends(get_db)],
+) -> TrainingDispatcher:
+    settings = get_settings()
+    return TrainingDispatcher(
+        repository=SqlAlchemyTrainingRepository(session),
+        task_sender=run_retraining_task,
+        queue_name=settings.training_queue_name,
+    )
+
+
+async def get_infrastructure_health_service() -> InfrastructureHealthService:
+    settings = get_settings()
+    return InfrastructureHealthService(
+        redis_client=Redis.from_url(settings.redis_url),
+        celery_app=celery_app,
+        timeout_seconds=settings.worker_health_timeout_seconds,
+    )
 
 
 async def get_monitoring_service(
@@ -129,9 +146,12 @@ ContinuousTrainingConfigDependency = Annotated[
     ContinuousTrainingConfig,
     Depends(get_continuous_training_config),
 ]
-TrainingJobRunnerDependency = Annotated[
-    Callable[[int], None],
-    Depends(get_training_job_runner),
+TrainingDispatcherDependency = Annotated[
+    TrainingDispatcher, Depends(get_training_dispatcher)
+]
+InfrastructureHealthDependency = Annotated[
+    InfrastructureHealthService,
+    Depends(get_infrastructure_health_service),
 ]
 MonitoringServiceDependency = Annotated[
     MonitoringService, Depends(get_monitoring_service)

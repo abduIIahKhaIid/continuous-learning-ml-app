@@ -12,7 +12,8 @@ PHASE_3_REVISION = "phase3_training_runs"
 PHASE_4_REVISION = "phase4_predictions"
 PHASE_5_REVISION = "phase5_feedback_lineage"
 PHASE_6_REVISION = "phase6_continuous_training"
-HEAD_REVISION = "phase7_monitoring"
+PHASE_7_REVISION = "phase7_monitoring"
+HEAD_REVISION = "phase8_celery_jobs"
 
 
 def _alembic_config() -> Config:
@@ -28,7 +29,9 @@ def init_db(database_engine: Engine = engine) -> None:
     with database_engine.connect() as connection:
         table_names = set(inspect(connection).get_table_names())
         if "alembic_version" not in table_names and "samples" in table_names:
-            if "predictions" in table_names:
+            if "model_data_profiles" in table_names:
+                adopted_revision = PHASE_7_REVISION
+            elif "predictions" in table_names:
                 sample_columns = {
                     column["name"]
                     for column in inspect(connection).get_columns("samples")

@@ -20,6 +20,9 @@ class TrainingCheckResponse(BaseModel):
     threshold: int
     training_scheduled: bool
     training_run_id: int | None = None
+    task_id: str | None = None
+    status: str | None = None
+    dispatch_error: str | None = None
     reason: str | None = None
 
 
@@ -44,6 +47,28 @@ class TrainingStatusResponse(BaseModel):
     training_in_progress: bool
     active_model_version: str | None
     last_training_run: TrainingRunSummary | None
+    latest_completed_run: TrainingRunSummary | None
+    queued_jobs: int
+    running_jobs: int
+    current_training_run: "TrainingJobRead | None"
+    redis_available: bool
+    celery_worker_available: bool
+
+
+class TrainingJobRead(BaseModel):
+    id: int
+    task_id: str | None
+    status: TrainingStatusValue
+    progress_stage: str
+    model_version: str
+    retry_count: int
+    dispatch_error: str | None
+    created_at: datetime
+    dispatched_at: datetime | None
+    started_at: datetime | None
+    heartbeat_at: datetime | None
+    completed_at: datetime | None
+    is_stale: bool = False
 
 
 class TrainingRunRead(BaseModel):
@@ -75,9 +100,23 @@ class TrainingRunRead(BaseModel):
     failure_reason: str | None
     created_at: datetime
     completed_at: datetime | None
+    task_id: str | None = None
+    progress_stage: str
+    retry_count: int
+    dispatch_error: str | None
+    dispatched_at: datetime | None
+    started_at: datetime | None
+    heartbeat_at: datetime | None
+    is_stale: bool = False
 
     @field_validator(
-        "created_at", "promoted_at", "completed_at", mode="after"
+        "created_at",
+        "promoted_at",
+        "completed_at",
+        "dispatched_at",
+        "started_at",
+        "heartbeat_at",
+        mode="after",
     )
     @classmethod
     def ensure_optional_utc(
@@ -88,3 +127,21 @@ class TrainingRunRead(BaseModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
+
+
+class ReconciliationItem(BaseModel):
+    training_run_id: int
+    dispatched: bool
+    task_id: str | None
+    error: str | None
+
+
+class ReconciliationResponse(BaseModel):
+    recovered_count: int
+    failed_count: int
+    items: list[ReconciliationItem]
+
+
+class WorkerHealthResponse(BaseModel):
+    redis_available: bool
+    celery_worker_available: bool

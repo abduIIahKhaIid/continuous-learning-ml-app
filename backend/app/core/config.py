@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     performance_min_feedback_samples: int = Field(default=30, ge=1)
     performance_warning_drop: float = Field(default=0.05, ge=0)
     performance_critical_drop: float = Field(default=0.10, ge=0)
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
+    celery_task_always_eager: bool = False
+    training_queue_name: str = "training"
+    training_task_max_retries: int = Field(default=3, ge=0)
+    training_task_retry_delay_seconds: int = Field(default=60, ge=1)
+    training_lock_timeout_seconds: int = Field(default=3600, ge=1)
+    training_task_soft_time_limit_seconds: int = Field(default=3300, ge=1)
+    training_task_time_limit_seconds: int = Field(default=3600, ge=1)
+    training_stale_timeout_seconds: int = Field(default=3600, ge=1)
+    worker_health_timeout_seconds: float = Field(default=1.0, gt=0, le=10)
+    redis_url: str = "redis://localhost:6379/2"
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
     local_frontend_origin: AnyHttpUrl = "http://localhost:5173"
     codespaces_origin_regex: str = (
@@ -53,6 +65,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "PERFORMANCE_WARNING_DROP must not exceed "
                 "PERFORMANCE_CRITICAL_DROP."
+            )
+        if (
+            self.training_task_soft_time_limit_seconds
+            >= self.training_task_time_limit_seconds
+        ):
+            raise ValueError(
+                "TRAINING_TASK_SOFT_TIME_LIMIT_SECONDS must be lower than "
+                "TRAINING_TASK_TIME_LIMIT_SECONDS."
             )
         return self
 

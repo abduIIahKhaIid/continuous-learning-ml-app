@@ -5,17 +5,19 @@ import { ModelStatus } from './features/prediction/ModelStatus'
 import { PredictionForm } from './features/prediction/PredictionForm'
 import { PredictionHistory } from './features/prediction/PredictionHistory'
 import { ContinuousTrainingStatus } from './features/training/ContinuousTrainingStatus'
+import { ModelMonitoring } from './features/monitoring/ModelMonitoring'
 
 function App() {
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
+  const [modelRefreshToken, setModelRefreshToken] = useState(0)
 
   return (
     <main className="page-shell">
       <div className="dashboard">
         <header className="page-header">
-          <p className="eyebrow">Phase 6</p>
+          <p className="eyebrow">Phase 8</p>
           <h1 id="page-title">ML samples and predictions</h1>
-          <ModelStatus />
+          <ModelStatus refreshToken={modelRefreshToken} />
         </header>
 
         <div className="content-grid">
@@ -41,6 +43,12 @@ function App() {
         </div>
 
         <ContinuousTrainingStatus />
+
+        <ModelMonitoring
+          onActiveModelChanged={() =>
+            setModelRefreshToken((current) => current + 1)
+          }
+        />
 
         <section className="card history-card" aria-labelledby="history-title">
           <h2 id="history-title">Prediction history and ground truth</h2>

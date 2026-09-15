@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react'
 import { fetchModelStatus } from '../../lib/api/predictions'
 import type { ModelStatus as ModelStatusData } from '../../types/prediction'
 
-export function ModelStatus() {
+interface ModelStatusProps {
+  refreshToken?: number
+}
+
+export function ModelStatus({ refreshToken = 0 }: ModelStatusProps) {
   const [model, setModel] = useState<ModelStatusData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -25,7 +29,7 @@ export function ModelStatus() {
       .finally(() => setIsLoading(false))
 
     return () => controller.abort()
-  }, [])
+  }, [refreshToken])
 
   if (isLoading) {
     return <p className="model-status">Checking model status…</p>

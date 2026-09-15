@@ -73,6 +73,28 @@ class TrainingRun(Base):
     concurrency_slot: Mapped[str | None] = mapped_column(
         String(32), unique=True
     )
+    celery_task_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True
+    )
+    retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    progress_stage: Mapped[str] = mapped_column(
+        String(32), default="queued", server_default="queued", nullable=False
+    )
+    dispatch_error: Mapped[str | None] = mapped_column(String(1000))
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    last_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     promoted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )

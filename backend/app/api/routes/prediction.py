@@ -2,7 +2,6 @@ import logging
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     HTTPException,
     Path,
     Query,
@@ -16,7 +15,7 @@ from app.api.dependencies import (
     ModelLoaderDependency,
     PredictionRepositoryDependency,
     TrainingRepositoryDependency,
-    TrainingJobRunnerDependency,
+    TrainingDispatcherDependency,
 )
 from app.schemas.prediction import (
     ModelStatusResponse,
@@ -91,10 +90,9 @@ async def feedback_summary(
 )
 async def submit_prediction_feedback(
     payload: PredictionFeedbackRequest,
-    background_tasks: BackgroundTasks,
     service: FeedbackServiceDependency,
     training_coordinator: ContinuousTrainingCoordinatorDependency,
-    training_job_runner: TrainingJobRunnerDependency,
+    training_dispatcher: TrainingDispatcherDependency,
     prediction_id: int = Path(gt=0),
 ) -> PredictionFeedbackResponse:
     try:
@@ -121,9 +119,7 @@ async def submit_prediction_feedback(
     try:
         check = training_coordinator.check_and_reserve()
         if check.training_run_id is not None:
-            background_tasks.add_task(
-                training_job_runner, check.training_run_id
-            )
+            training_dispatcher.dispatch(check.training_run_id)
     except Exception:
         logger.exception(
             "Post-feedback automatic-training check failed for prediction %s.",

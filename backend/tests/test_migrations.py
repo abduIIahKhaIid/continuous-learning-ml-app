@@ -68,6 +68,14 @@ def test_migrations_create_fresh_schema(tmp_path: Path) -> None:
             "concurrency_slot",
             "promoted_at",
             "completed_at",
+            "celery_task_id",
+            "retry_count",
+            "progress_stage",
+            "dispatch_error",
+            "dispatched_at",
+            "started_at",
+            "heartbeat_at",
+            "last_retry_at",
         }.issubset(training_run_columns)
         assert any(
             constraint["column_names"] == ["model_version", "feature_name"]

@@ -201,6 +201,53 @@ h1 {
   margin-top: 1.5rem;
 }
 
+.monitoring-card {
+  margin-top: 1.5rem;
+}
+
+.monitoring-card h3 {
+  margin: 2rem 0 0.75rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.monitoring-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.monitoring-table th,
+.monitoring-table td {
+  padding: 0.7rem;
+  border-bottom: 1px solid #d7e2dc;
+  white-space: nowrap;
+}
+
+.rollback-button {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #a52a2a;
+  border-radius: 0.45rem;
+  color: #8c2020;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.status-healthy {
+  color: #155c38;
+}
+
+.status-warning {
+  color: #795500;
+}
+
+.status-unhealthy {
+  color: #a52a2a;
+}
+
 .section-heading {
   display: flex;
   justify-content: space-between;

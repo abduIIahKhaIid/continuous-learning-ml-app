@@ -128,18 +128,3 @@ class ContinuousTrainingCoordinator:
             training_scheduled=scheduled,
             reason=reason,
         )
-
-
-def run_reserved_training(run_id: int) -> None:
-    """Development worker entry point; replaceable by a durable queue later."""
-    from app.core.config import get_settings
-    from app.database.session import SessionLocal
-    from app.ml.model_loader import model_loader
-    from app.ml.retraining_service import RetrainingService
-
-    config = ContinuousTrainingConfig.from_settings(get_settings())
-    RetrainingService(
-        session_factory=SessionLocal,
-        config=config,
-        loader=model_loader,
-    ).execute(run_id)
